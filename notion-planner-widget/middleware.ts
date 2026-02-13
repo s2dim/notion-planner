@@ -130,14 +130,13 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Widget pages: iframe + Notion hint만 허용
+  // Widget pages: iframe이면 통과 (notionOk는 제거/완화)
   if (path.startsWith("/widget/")) {
     if (isDev) return NextResponse.next();
 
     const dest = req.headers.get("sec-fetch-dest");
     const mode = req.headers.get("sec-fetch-mode");
     const isIframe = dest === "iframe";
-    const notionOk = isFromNotion(req);
 
     if (!secretReady) {
       return NextResponse.json(
@@ -146,19 +145,19 @@ export function middleware(req: NextRequest) {
       );
     }
 
-    // iframe이 아닌 직접 document navigation 방지 + notion hint 체크
-    if (!(isIframe && notionOk) || mode === "navigate") {
+    // iframe이 아니면 차단 (직접 접근 방지)
+    if (!isIframe || mode === "navigate") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Issue signed session cookie
+    // 쿠키 발급
     const res = NextResponse.next();
     const token = issueSessionToken(req, secret);
 
     res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: true,
-      sameSite: "none", // Notion iframe cross-site 고려
+      sameSite: "none",
       path: "/",
       maxAge: SESSION_TTL_SEC,
     });
