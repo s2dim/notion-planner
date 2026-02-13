@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useRef } from "react";
 
 type Options = {
-  // 평소 폴링
   idleIntervalMs?: number;
-  // 편집 직후 폴링
   burstIntervalMs?: number;
   burstDurationMs?: number;
-  // 화면 보일 때만 동작
   onlyWhenVisible?: boolean;
+  burstCount?: number;
 };
 
 export function useSmartRefresh(
@@ -17,28 +15,37 @@ export function useSmartRefresh(
   opts: Options = {},
 ) {
   const {
-    idleIntervalMs = 0,
-    burstIntervalMs = 2000,
-    burstDurationMs = 15000,
-    onlyWhenVisible = true,
+    idleIntervalMs = 30000,
+    burstIntervalMs = 3000,
+    burstDurationMs = 8000,
+    onlyWhenVisible = false,
   } = opts;
 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
-  const burstTimerRef = useRef<number | null>(null);
-  const burstEndRef = useRef<number>(0);
+  const inFlightRef = useRef(false);
 
-  const safeRefresh = useCallback(() => {
+  const runRefresh = useCallback(async () => {
     if (onlyWhenVisible && document.visibilityState !== "visible") return;
-    void refreshRef.current();
+    if (inFlightRef.current) return;
+
+    inFlightRef.current = true;
+    try {
+      await refreshRef.current();
+    } finally {
+      inFlightRef.current = false;
+    }
   }, [onlyWhenVisible]);
 
-  // 포커스 시 즉시 갱신
+  const burstTimerRef = useRef<number | null>(null);
+  const burstEndRef = useRef<number>(0);
+  const burstCountRef = useRef(0);
+
   useEffect(() => {
-    const onFocus = () => safeRefresh();
+    const onFocus = () => void runRefresh();
     const onVisibility = () => {
-      if (document.visibilityState === "visible") safeRefresh();
+      if (document.visibilityState === "visible") void runRefresh();
     };
 
     window.addEventListener("focus", onFocus);
@@ -48,32 +55,56 @@ export function useSmartRefresh(
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [safeRefresh]);
+  }, [runRefresh]);
 
-  // 평소 폴링
   useEffect(() => {
     if (!idleIntervalMs || idleIntervalMs <= 0) return;
-    const id = window.setInterval(() => safeRefresh(), idleIntervalMs);
+    const id = window.setInterval(() => void runRefresh(), idleIntervalMs);
     return () => window.clearInterval(id);
-  }, [idleIntervalMs, safeRefresh]);
+  }, [idleIntervalMs, runRefresh]);
 
-  // 편집 직후: 기준 시간에 맞춰 갱신 (현재 1초)
   const startBurst = useCallback(() => {
     burstEndRef.current = Date.now() + burstDurationMs;
-
     if (burstTimerRef.current != null) return;
+    burstCountRef.current = 0;
 
-    burstTimerRef.current = window.setInterval(() => {
-      if (onlyWhenVisible && document.visibilityState !== "visible") return;
+    const tick = () => {
+      if (onlyWhenVisible && document.visibilityState !== "visible") {
+        // 가시성 문제로 지연, 다음 틱 예약
+        burstTimerRef.current = window.setTimeout(
+          tick,
+          burstIntervalMs,
+        ) as unknown as number;
+        return;
+      }
 
-      if (Date.now() > burstEndRef.current) {
-        window.clearInterval(burstTimerRef.current!);
+      if (
+        Date.now() > burstEndRef.current ||
+        (opts.burstCount ?? 3) <= burstCountRef.current
+      ) {
+        window.clearTimeout(burstTimerRef.current!);
         burstTimerRef.current = null;
         return;
       }
-      void refreshRef.current();
-    }, burstIntervalMs);
-  }, [burstDurationMs, burstIntervalMs, onlyWhenVisible]);
+      burstCountRef.current += 1;
+      void runRefresh();
+      burstTimerRef.current = window.setTimeout(
+        tick,
+        burstIntervalMs,
+      ) as unknown as number;
+    };
 
-  return { refreshNow: safeRefresh, startBurst };
+    burstTimerRef.current = window.setTimeout(
+      tick,
+      burstIntervalMs,
+    ) as unknown as number;
+  }, [
+    burstDurationMs,
+    burstIntervalMs,
+    onlyWhenVisible,
+    runRefresh,
+    opts.burstCount,
+  ]);
+
+  return { refreshNow: runRefresh, startBurst };
 }

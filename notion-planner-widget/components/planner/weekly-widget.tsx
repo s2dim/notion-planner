@@ -26,6 +26,7 @@ import {
 } from "@/lib/planner-store";
 
 import { useSmartRefresh } from "@/lib/useSmartRefresh";
+import { subscribeTasksChanged, publishTasksChanged } from "@/lib/planner-bus";
 
 const SLOT_ICONS = {
   morning: Sunrise,
@@ -70,13 +71,11 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
       date: t.date,
     }));
 
-    // 로컬 캐시(다른 주) 유지 + 이번 주만 교체 & 머지
     const base = loadData();
     const outside = base.weeklyTasks.filter(
       (x) => x.date < date_from || x.date > date_to,
     );
 
-    // 노션 결과를 id 기준으로 사용(동일 id 덮어쓰기)
     const byId = new Map<string, (typeof weeklyFromNotion)[number]>();
     weeklyFromNotion.forEach((t) => byId.set(t.id, t));
 
@@ -88,13 +87,22 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
 
   // 포커스 시 갱신 + 편집 후 잠깐 버스트
   const { startBurst } = useSmartRefresh(refreshWeekly, {
-    idleIntervalMs: 0,
-    burstIntervalMs: 1000, // 폴링 시간 설정
-    burstDurationMs: 15000,
+    onlyWhenVisible: false,
+    idleIntervalMs: 25000,
+    burstIntervalMs: 1500,
+    burstDurationMs: 8000,
+    burstCount: 3,
   });
 
   useEffect(() => {
     refreshWeekly().catch(console.error);
+  }, [refreshWeekly]);
+
+  // ✅ 다른 위젯(iframe)에서 변경이 일어나면 즉시 갱신
+  useEffect(() => {
+    return subscribeTasksChanged(() => {
+      refreshWeekly().catch(console.error);
+    });
   }, [refreshWeekly]);
 
   const addTask = async (date: string, slot: TimeSlot) => {
@@ -116,6 +124,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
 
     try {
       const created = await createTask({ text, date, timeSlot: slot });
+
       const base1 = loadData();
       onUpdate({
         ...base1,
@@ -126,7 +135,8 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
         ),
       });
 
-      // 다른 iframe이 곧 따라오도록 잠깐 버스트
+      // ✅ 다른 iframe들에 "변경됨" 신호 보내기
+      publishTasksChanged("weekly");
       startBurst();
     } catch (e) {
       const baseErr = loadData();
@@ -147,6 +157,8 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
 
     try {
       await deleteTask(taskId);
+
+      publishTasksChanged("weekly");
       startBurst();
     } catch (e) {
       console.error(e);
@@ -255,8 +267,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                               value={newTaskText}
                               onChange={(e) => setNewTaskText(e.target.value)}
                               onBlur={() => {
-                                if (newTaskText.trim()) addTask(dateStr, slot);
-                                else setEditingSlot(null);
+                                setEditingSlot(null);
                               }}
                               placeholder="..."
                               className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"

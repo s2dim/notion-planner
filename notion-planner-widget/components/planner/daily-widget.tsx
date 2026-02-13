@@ -29,6 +29,7 @@ import {
 } from "@/lib/planner-store";
 
 import { useSmartRefresh } from "@/lib/useSmartRefresh";
+import { subscribeTasksChanged, publishTasksChanged } from "@/lib/planner-bus";
 
 const SLOT_ICONS = {
   morning: Sunrise,
@@ -71,13 +72,22 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   }, [dateStr, onUpdate]);
 
   const { startBurst } = useSmartRefresh(refreshDaily, {
-    idleIntervalMs: 0,
-    burstIntervalMs: 2000, // 폴링 시간 설정
-    burstDurationMs: 15000,
+    onlyWhenVisible: false,
+    idleIntervalMs: 25000,
+    burstIntervalMs: 1500,
+    burstDurationMs: 8000,
+    burstCount: 3,
   });
 
   useEffect(() => {
     refreshDaily().catch(console.error);
+  }, [refreshDaily]);
+
+  // ✅ 다른 위젯(iframe)에서 변경이 일어나면 즉시 갱신
+  useEffect(() => {
+    return subscribeTasksChanged(() => {
+      refreshDaily().catch(console.error);
+    });
   }, [refreshDaily]);
 
   const toggleTask = async (taskId: string) => {
@@ -96,6 +106,8 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
     try {
       await toggleTaskApi(taskId, nextCompleted);
+
+      publishTasksChanged("daily");
       startBurst();
     } catch (e) {
       // rollback
@@ -118,6 +130,8 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
     try {
       await deleteTaskApi(taskId);
+
+      publishTasksChanged("daily");
       startBurst();
     } catch (e) {
       console.error(e);
