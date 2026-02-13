@@ -1,9 +1,24 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Sunrise, Sun, Moon, ChevronLeft, ChevronRight, CheckCircle2, Circle } from "lucide-react"
-import { addDays, subDays, format } from "date-fns"
-import { ko } from "date-fns/locale"
+import { useState, useEffect, useMemo } from "react";
+import {
+  Sunrise,
+  Sun,
+  Moon,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  Circle,
+} from "lucide-react";
+import { addDays, subDays, format } from "date-fns";
+import { ko } from "date-fns/locale";
+
+import {
+  fetchTasks,
+  createTask,
+  toggleTask as toggleTaskApi,
+} from "@/lib/tasks-api";
+
 import {
   type TimeSlot,
   type PlannerData,
@@ -11,63 +26,164 @@ import {
   formatDate,
   generateId,
   TIME_SLOT_CONFIG,
-} from "@/lib/planner-store"
+} from "@/lib/planner-store";
 
 const SLOT_ICONS = {
   morning: Sunrise,
   afternoon: Sun,
   evening: Moon,
-}
+};
 
 interface DailyWidgetProps {
-  data: PlannerData
-  onUpdate: (data: PlannerData) => void
+  data: PlannerData;
+  onUpdate: (data: PlannerData) => void;
 }
 
 export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
-  const [currentDate, setCurrentDate] = useState(new Date())
-  const dateStr = formatDate(currentDate)
-  const isToday = formatDate(new Date()) === dateStr
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
+  const isToday = formatDate(new Date()) === dateStr;
 
-  const weeklyTasksForDay = data.weeklyTasks.filter((t) => t.date === dateStr)
+  // UI 계산용 (weekly는 이미 Notion에서 불러와 data.weeklyTasks에 들어온다고 가정)
+  const weeklyTasksForDay = data.weeklyTasks.filter((t) => t.date === dateStr);
+  const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
-  const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr)
+  // ✅ 날짜 바뀔 때 Notion에서 daily tasks 로드
+  useEffect(() => {
+    const run = async () => {
+      const res = await fetchTasks({
+        scope: "daily",
+        date_from: dateStr,
+        date_to: dateStr,
+      });
 
-  const syncFromWeekly = () => {
-    const existingTexts = new Set(
-      dailyTasksForDay.map((t) => `${t.text}-${t.timeSlot}`)
-    )
-    const newTasks: DailyTask[] = weeklyTasksForDay
-      .filter((wt) => !existingTexts.has(`${wt.text}-${wt.timeSlot}`))
-      .map((wt) => ({
-        id: generateId(),
-        text: wt.text,
-        timeSlot: wt.timeSlot,
-        completed: false,
-        date: dateStr,
-      }))
+      const dailyFromNotion: DailyTask[] = res.tasks.map((t) => ({
+        id: t.id,
+        text: t.text,
+        timeSlot: t.timeSlot,
+        completed: t.completed,
+        date: t.date,
+      }));
 
-    if (newTasks.length > 0) {
       onUpdate({
         ...data,
-        dailyTasks: [...data.dailyTasks, ...newTasks],
-      })
-    }
-  }
+        // 현재 날짜 daily만 교체, 다른 날짜 daily는 유지
+        dailyTasks: [
+          ...data.dailyTasks.filter((x) => x.date !== dateStr),
+          ...dailyFromNotion,
+        ],
+      });
+    };
 
-  const toggleTask = (taskId: string) => {
+    run().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateStr]);
+
+  // ✅ weekly → daily Sync (Notion에 daily task 생성)
+  const syncFromWeekly = async () => {
+    // 현재 daily(화면) + weekly의 조합에서 중복 방지
+    const existingTexts = new Set(
+      dailyTasksForDay.map((t) => `${t.text}-${t.timeSlot}`),
+    );
+
+    const toCreate = weeklyTasksForDay
+      .filter((wt) => !existingTexts.has(`${wt.text}-${wt.timeSlot}`))
+      .map((wt) => ({
+        text: wt.text,
+        timeSlot: wt.timeSlot,
+      }));
+
+    if (toCreate.length === 0) return;
+
+    // 1) 화면 optimistic 반영(임시 id)
+    const tempTasks: DailyTask[] = toCreate.map((t) => ({
+      id: generateId(),
+      text: t.text,
+      timeSlot: t.timeSlot,
+      completed: false,
+      date: dateStr,
+    }));
+
+    onUpdate({
+      ...data,
+      dailyTasks: [...data.dailyTasks, ...tempTasks],
+    });
+
+    // 2) Notion에 실제 생성하고 temp를 notion id로 교체
+    try {
+      const createdIds: string[] = [];
+      for (const t of toCreate) {
+        const created = await createTask({
+          text: t.text,
+          date: dateStr,
+          timeSlot: t.timeSlot,
+          scope: "daily",
+        });
+        createdIds.push(created.task.id);
+      }
+
+      // temp 제거 + created 추가
+      const tempIds = new Set(tempTasks.map((t) => t.id));
+
+      onUpdate({
+        ...data,
+        dailyTasks: data.dailyTasks
+          .filter((t) => !tempIds.has(t.id))
+          .concat(
+            toCreate.map((t, idx) => ({
+              id: createdIds[idx],
+              text: t.text,
+              timeSlot: t.timeSlot,
+              completed: false,
+              date: dateStr,
+            })),
+          ),
+      });
+    } catch (e) {
+      // 실패하면 temp rollback
+      const tempIds = new Set(tempTasks.map((t) => t.id));
+      onUpdate({
+        ...data,
+        dailyTasks: data.dailyTasks.filter((t) => !tempIds.has(t.id)),
+      });
+      console.error(e);
+    }
+  };
+
+  // ✅ 체크 토글 → Notion PATCH
+  const toggleTask = async (taskId: string) => {
+    const prev = data.dailyTasks.find((t) => t.id === taskId);
+    if (!prev) return;
+    const nextCompleted = !prev.completed;
+
+    // 1) optimistic UI
     onUpdate({
       ...data,
       dailyTasks: data.dailyTasks.map((t) =>
-        t.id === taskId ? { ...t, completed: !t.completed } : t
+        t.id === taskId ? { ...t, completed: nextCompleted } : t,
       ),
-    })
-  }
+    });
 
-  const allTasks = dailyTasksForDay.length > 0 ? dailyTasksForDay : []
-  const completedCount = allTasks.filter((t) => t.completed).length
-  const totalCount = allTasks.length
-  const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+    // 2) Notion 반영
+    try {
+      await toggleTaskApi(taskId, nextCompleted);
+    } catch (e) {
+      // rollback
+      onUpdate({
+        ...data,
+        dailyTasks: data.dailyTasks.map((t) =>
+          t.id === taskId ? { ...t, completed: !nextCompleted } : t,
+        ),
+      });
+      console.error(e);
+    }
+  };
+
+  // --- 아래는 네 원래 UI 로직 그대로 ---
+  const allTasks = dailyTasksForDay.length > 0 ? dailyTasksForDay : [];
+  const completedCount = allTasks.filter((t) => t.completed).length;
+  const totalCount = allTasks.length;
+  const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -124,11 +240,11 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       )}
 
       {(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
-        const Icon = SLOT_ICONS[slot]
-        const config = TIME_SLOT_CONFIG[slot]
-        const slotTasks = allTasks.filter((t) => t.timeSlot === slot)
+        const Icon = SLOT_ICONS[slot];
+        const config = TIME_SLOT_CONFIG[slot];
+        const slotTasks = allTasks.filter((t) => t.timeSlot === slot);
 
-        if (slotTasks.length === 0) return null
+        if (slotTasks.length === 0) return null;
 
         return (
           <div key={slot} className="flex flex-col gap-1.5">
@@ -163,7 +279,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
               ))}
             </div>
           </div>
-        )
+        );
       })}
 
       {totalCount === 0 && weeklyTasksForDay.length === 0 && (
@@ -172,5 +288,5 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
         </div>
       )}
     </div>
-  )
+  );
 }
