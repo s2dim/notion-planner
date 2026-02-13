@@ -17,6 +17,7 @@ import {
   fetchTasks,
   createTask,
   toggleTask as toggleTaskApi,
+  deleteTask as deleteTaskApi,
 } from "@/lib/tasks-api";
 
 import {
@@ -26,6 +27,7 @@ import {
   formatDate,
   generateId,
   TIME_SLOT_CONFIG,
+  loadData,
 } from "@/lib/planner-store";
 
 const SLOT_ICONS = {
@@ -179,6 +181,38 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
     }
   };
 
+  const removeDailyTask = async (taskId: string) => {
+    const target = data.dailyTasks.find((t) => t.id === taskId);
+    const toRemoveWeeklyIds =
+      target == null
+        ? []
+        : data.weeklyTasks
+            .filter(
+              (w) =>
+                w.date === target.date &&
+                w.timeSlot === target.timeSlot &&
+                w.text === target.text,
+            )
+            .map((w) => w.id);
+
+    const base = loadData();
+    onUpdate({
+      ...base,
+      dailyTasks: base.dailyTasks.filter((t) => t.id !== taskId),
+      weeklyTasks: base.weeklyTasks.filter(
+        (t) => !toRemoveWeeklyIds.includes(t.id),
+      ),
+    });
+    try {
+      await deleteTaskApi(taskId);
+      for (const id of toRemoveWeeklyIds) {
+        await deleteTaskApi(id);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // --- 아래는 네 원래 UI 로직 그대로 ---
   const allTasks = dailyTasksForDay.length > 0 ? dailyTasksForDay : [];
   const completedCount = allTasks.filter((t) => t.completed).length;
@@ -256,26 +290,34 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
             </div>
             <div className="flex flex-col gap-1">
               {slotTasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => toggleTask(task.id)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
-                >
-                  {task.completed ? (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-                  ) : (
-                    <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                  )}
-                  <span
-                    className={`text-sm leading-tight ${
-                      task.completed
-                        ? "text-muted-foreground line-through"
-                        : "text-foreground"
-                    }`}
+                <div key={task.id} className="group flex items-start gap-1">
+                  <button
+                    onClick={() => toggleTask(task.id)}
+                    className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
                   >
-                    {task.text}
-                  </span>
-                </button>
+                    {task.completed ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
+                    ) : (
+                      <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                    )}
+                    <span
+                      className={`text-sm leading-tight ${
+                        task.completed
+                          ? "text-muted-foreground line-through"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {task.text}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => removeDailyTask(task.id)}
+                    className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                    aria-label={`Remove task: ${task.text}`}
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
             </div>
           </div>
