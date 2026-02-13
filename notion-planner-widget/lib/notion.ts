@@ -1,14 +1,10 @@
 import { Client } from "@notionhq/client";
 
-export const notion = new Client({
-  auth: process.env.NOTION_TOKEN,
-});
+const token = process.env.NOTION_TOKEN;
+const dbId = process.env.NOTION_TASKS_DB_ID;
 
-export const NOTION_TASKS_DB_ID = process.env.NOTION_TASKS_DB_ID as string;
+if (!token) throw new Error("Missing NOTION_TOKEN in .env.local");
+if (!dbId) throw new Error("Missing NOTION_TASKS_DB_ID in .env.local");
 
-if (!process.env.NOTION_TOKEN) {
-  throw new Error("Missing NOTION_TOKEN in env");
-}
-if (!process.env.NOTION_TASKS_DB_ID) {
-  throw new Error("Missing NOTION_TASKS_DB_ID in env");
-}
+export const notion = new Client({ auth: token });
+export const NOTION_TASKS_DB_ID = dbId;
