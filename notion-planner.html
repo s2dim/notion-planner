@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(30, 25%, 96%)',
+                        foreground: 'hsl(20, 15%, 15%)',
+                        card: 'hsl(30, 30%, 99%)',
+                        'card-foreground': 'hsl(20, 15%, 15%)',
+                        primary: 'hsl(16, 50%, 55%)',
+                        'primary-foreground': 'hsl(0, 0%, 100%)',
+                        secondary: 'hsl(30, 20%, 93%)',
+                        'secondary-foreground': 'hsl(20, 15%, 20%)',
+                        muted: 'hsl(30, 15%, 94%)',
+                        'muted-foreground': 'hsl(20, 8%, 50%)',
+                        accent: 'hsl(145, 30%, 55%)',
+                        'accent-foreground': 'hsl(0, 0%, 100%)',
+                        destructive: 'hsl(0, 65%, 55%)',
+                        border: 'hsl(30, 15%, 88%)',
+                        morning: 'hsl(35, 80%, 55%)',
+                        afternoon: 'hsl(145, 35%, 50%)',
+                        evening: 'hsl(230, 40%, 50%)'
+                    },
+                    borderRadius: {
+                        'lg': '0.75rem'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: hsl(30, 25%, 96%);
+            color: hsl(20, 15%, 15%);
+        }
+
+        /* Lucide Icons as SVG */
+        .icon-sunrise {
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: hsl(30, 15%, 94%);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: hsl(30, 15%, 88%);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: hsl(20, 8%, 50%);
+        }
+    </style>
+</head>
+<body class="p-8">
+    <div id="app" class="mx-auto max-w-[1400px]">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="font-serif text-2xl font-bold text-foreground">My Planner</h1>
+            <p class="mt-1 text-sm text-muted-foreground">
+                Plan your week, track your habits, achieve your goals.
+            </p>
+        </header>
+
+        <div class="flex flex-col gap-6">
+            <!-- Weekly Widget - Full Width -->
+            <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-foreground">Weekly</h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="prevWeek()" 
+                                class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m15 18-6-6 6-6"/>
+                            </svg>
+                        </button>
+                        <span class="min-w-[120px] text-center text-sm font-medium text-muted-foreground" id="weekLabel"></span>
+                        <button onclick="nextWeek()" 
+                                class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m9 18 6-6-6-6"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="weeklyGrid" class="grid grid-cols-7 gap-2"></div>
+            </div>
+
+            <!-- Middle Row: Daily + Habit Tracker -->
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <!-- Daily Widget -->
+                <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-foreground">Daily</h2>
+                        <div class="flex items-center gap-2">
+                            <button onclick="prevDay()" 
+                                    class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m15 18-6-6 6-6"/>
+                                </svg>
+                            </button>
+                            <span class="min-w-[100px] text-center text-sm font-medium text-muted-foreground" id="dailyDate"></span>
+                            <button onclick="nextDay()" 
+                                    class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m9 18 6-6-6-6"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="dailyContent"></div>
+                </div>
+
+                <!-- Habit Tracker Widget -->
+                <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                    <h2 class="text-lg font-semibold text-foreground mb-4">Habit Tracker</h2>
+                    <div id="habitTracker"></div>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Monthly + Yearly + Calendar -->
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <!-- Monthly Goals -->
+                <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-foreground">Monthly</h2>
+                        <span class="text-xs text-muted-foreground" id="currentMonth"></span>
+                    </div>
+                    <div id="monthlyGoals"></div>
+                </div>
+
+                <!-- Yearly Goals -->
+                <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-foreground">Yearly</h2>
+                        <span class="text-xs text-muted-foreground" id="currentYear"></span>
+                    </div>
+                    <div id="yearlyGoals"></div>
+                </div>
+
+                <!-- Calendar -->
+                <div class="rounded-lg border border-border bg-card p-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-foreground" id="calendarMonth"></h2>
+                        <div class="flex items-center gap-1">
+                            <button onclick="prevMonth()" 
+                                    class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m15 18-6-6 6-6"/>
+                                </svg>
+                            </button>
+                            <button onclick="nextMonth()" 
+                                    class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m9 18 6-6-6-6"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="calendar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Icons as SVG strings
+        const icons = {
+            sunrise: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></svg>',
+            sun: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
+            moon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
+            plus: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
+            x: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+            circle: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>',
+            checkCircle: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>'
+        };
+
+        const iconColors = {
+            morning: 'text-[hsl(35,80%,55%)]',
+            afternoon: 'text-[hsl(145,35%,50%)]',
+            evening: 'text-[hsl(230,40%,50%)]'
+        };
+
+        const timeSlotIcons = {
+            morning: 'sunrise',
+            afternoon: 'sun',
+            evening: 'moon'
+        };
+
+        // Data Store
+        const STORAGE_KEY = 'planner-widget-data-v2';
+        
+        let data = {
+            weeklyTasks: [],
+            dailyTasks: [],
+            monthlyGoals: [],
+            yearlyGoals: [],
+            habits: [],
+            habitEntries: []
+        };
+
+        let currentWeekDate = new Date();
+        let currentDailyDate = new Date();
+        let currentCalendarDate = new Date();
+
+        // Utility Functions
+        function getMonday(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            d.setDate(diff);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        }
+
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function formatDateShort(date) {
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            return `${date.getMonth() + 1}/${date.getDate()} (${days[date.getDay()]})`;
+        }
+
+        function getWeekNumber(date) {
+            const d = new Date(date);
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+            const yearStart = new Date(d.getFullYear(), 0, 1);
+            return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        }
+
+        function getWeekDays(startDate) {
+            const days = [];
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(startDate);
+                date.setDate(startDate.getDate() + i);
+                days.push(date);
+            }
+            return days;
+        }
+
+        function generateId() {
+            return Math.random().toString(36).substring(2, 9);
+        }
+
+        function loadData() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    data = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error('Failed to load data:', e);
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch (e) {
+                console.error('Failed to save data:', e);
+            }
+        }
+
+        // Weekly Widget
+        let editingSlot = null;
+
+        function renderWeekly() {
+            const monday = getMonday(currentWeekDate);
+            const weekDays = getWeekDays(monday);
+            const today = formatDate(new Date());
+
+            const weekNum = getWeekNumber(monday);
+            document.getElementById('weekLabel').textContent = 
+                `${monday.getFullYear()} Week ${weekNum}`;
+
+            const grid = document.getElementById('weeklyGrid');
+            grid.innerHTML = '';
+
+            weekDays.forEach((day) => {
+                const dateStr = formatDate(day);
+                const isToday = dateStr === today;
+
+                const dayCol = document.createElement('div');
+                dayCol.className = `flex min-h-[200px] flex-col rounded-lg border p-3 transition-shadow ${
+                    isToday ? 'border-primary/40 bg-primary/5 shadow-sm' : 'border-border bg-card'
+                }`;
+
+                const header = document.createElement('div');
+                header.className = `mb-3 text-center text-xs font-semibold ${
+                    isToday ? 'text-primary' : 'text-muted-foreground'
+                }`;
+                header.textContent = formatDateShort(day);
+                dayCol.appendChild(header);
+
+                ['morning', 'afternoon', 'evening'].forEach(slot => {
+                    const slotDiv = document.createElement('div');
+                    slotDiv.className = 'mb-2 last:mb-0';
+
+                    const slotHeader = document.createElement('div');
+                    slotHeader.className = 'mb-1 flex items-center gap-1';
+                    
+                    const iconWrapper = document.createElement('span');
+                    iconWrapper.className = `${iconColors[slot]} inline-flex items-center`;
+                    iconWrapper.innerHTML = icons[timeSlotIcons[slot]];
+                    
+                    const label = document.createElement('span');
+                    label.className = 'text-[10px] text-muted-foreground uppercase';
+                    label.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
+                    
+                    slotHeader.appendChild(iconWrapper);
+                    slotHeader.appendChild(label);
+                    slotDiv.appendChild(slotHeader);
+
+                    const tasksDiv = document.createElement('div');
+                    tasksDiv.className = 'flex flex-col gap-0.5';
+                    tasksDiv.id = `tasks-${dateStr}-${slot}`;
+
+                    const tasks = data.weeklyTasks.filter(t => t.date === dateStr && t.timeSlot === slot);
+                    
+                    tasks.forEach(task => {
+                        const taskDiv = document.createElement('div');
+                        taskDiv.className = 'group flex items-start gap-1';
+                        taskDiv.innerHTML = `
+                            <span class="flex-1 text-[11px] leading-tight text-foreground">${task.text}</span>
+                            <button onclick="removeWeeklyTask('${task.id}')" 
+                                    class="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block">
+                                ${icons.x}
+                            </button>
+                        `;
+                        tasksDiv.appendChild(taskDiv);
+                    });
+
+                    const isEditing = editingSlot && editingSlot.date === dateStr && editingSlot.slot === slot;
+                    
+                    if (isEditing) {
+                        const inputForm = document.createElement('form');
+                        inputForm.className = 'flex';
+                        inputForm.onsubmit = (e) => {
+                            e.preventDefault();
+                            const input = inputForm.querySelector('input');
+                            if (input.value.trim()) {
+                                addWeeklyTask(dateStr, slot, input.value.trim());
+                            }
+                            editingSlot = null;
+                            renderWeekly();
+                        };
+
+                        const input = document.createElement('input');
+                        input.className = 'w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50';
+                        input.placeholder = '...';
+                        input.onblur = () => {
+                            setTimeout(() => {
+                                if (input.value.trim()) {
+                                    addWeeklyTask(dateStr, slot, input.value.trim());
+                                }
+                                editingSlot = null;
+                                renderWeekly();
+                            }, 100);
+                        };
+                        
+                        inputForm.appendChild(input);
+                        tasksDiv.appendChild(inputForm);
+                        
+                        setTimeout(() => input.focus(), 0);
+                    } else {
+                        const addBtn = document.createElement('button');
+                        addBtn.className = 'flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground';
+                        addBtn.innerHTML = icons.plus;
+                        addBtn.onclick = () => {
+                            editingSlot = { date: dateStr, slot: slot };
+                            renderWeekly();
+                        };
+                        tasksDiv.appendChild(addBtn);
+                    }
+
+                    slotDiv.appendChild(tasksDiv);
+                    dayCol.appendChild(slotDiv);
+                });
+
+                grid.appendChild(dayCol);
+            });
+        }
+
+        function addWeeklyTask(date, slot, text) {
+            data.weeklyTasks.push({
+                id: generateId(),
+                text: text,
+                date: date,
+                timeSlot: slot
+            });
+            saveData();
+            renderDaily();
+        }
+
+        function removeWeeklyTask(id) {
+            data.weeklyTasks = data.weeklyTasks.filter(t => t.id !== id);
+            saveData();
+            renderWeekly();
+            renderDaily();
+        }
+
+        function prevWeek() {
+            currentWeekDate.setDate(currentWeekDate.getDate() - 7);
+            renderWeekly();
+        }
+
+        function nextWeek() {
+            currentWeekDate.setDate(currentWeekDate.getDate() + 7);
+            renderWeekly();
+        }
+
+        // Daily Widget
+        function renderDaily() {
+            const dateStr = formatDate(currentDailyDate);
+            const isToday = formatDate(new Date()) === dateStr;
+
+            document.getElementById('dailyDate').innerHTML = 
+                formatDateShort(currentDailyDate) + 
+                (isToday ? '<span class="ml-1 text-xs text-primary">today</span>' : '');
+
+            const weeklyTasks = data.weeklyTasks.filter(t => t.date === dateStr);
+            let dailyTasks = data.dailyTasks.filter(t => t.date === dateStr);
+
+            // Auto-sync from weekly if no daily tasks
+            if (dailyTasks.length === 0 && weeklyTasks.length > 0) {
+                weeklyTasks.forEach(wt => {
+                    data.dailyTasks.push({
+                        id: generateId(),
+                        text: wt.text,
+                        timeSlot: wt.timeSlot,
+                        completed: false,
+                        date: dateStr
+                    });
+                });
+                saveData();
+                dailyTasks = data.dailyTasks.filter(t => t.date === dateStr);
+            }
+
+            const container = document.getElementById('dailyContent');
+            container.innerHTML = '';
+
+            if (dailyTasks.length > 0) {
+                const completed = dailyTasks.filter(t => t.completed).length;
+                const total = dailyTasks.length;
+                const progress = (completed / total) * 100;
+
+                const progressDiv = document.createElement('div');
+                progressDiv.className = 'flex flex-col gap-1.5 mb-4';
+                progressDiv.innerHTML = `
+                    <div class="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>${completed}/${total} completed</span>
+                        <span>${Math.round(progress)}%</span>
+                    </div>
+                    <div class="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <div class="h-full rounded-full bg-primary transition-all duration-300" 
+                             style="width: ${progress}%"></div>
+                    </div>
+                `;
+                container.appendChild(progressDiv);
+            }
+
+            ['morning', 'afternoon', 'evening'].forEach(slot => {
+                const slotTasks = dailyTasks.filter(t => t.timeSlot === slot);
+                if (slotTasks.length === 0) return;
+
+                const slotDiv = document.createElement('div');
+                slotDiv.className = 'flex flex-col gap-1.5 mb-4';
+
+                const header = document.createElement('div');
+                header.className = 'flex items-center gap-1.5';
+                
+                const iconWrapper = document.createElement('span');
+                iconWrapper.className = `${iconColors[slot]} inline-flex items-center`;
+                iconWrapper.innerHTML = icons[timeSlotIcons[slot]];
+                
+                const label = document.createElement('span');
+                label.className = 'text-xs font-medium text-muted-foreground';
+                label.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
+                
+                header.appendChild(iconWrapper);
+                header.appendChild(label);
+                slotDiv.appendChild(header);
+
+                const tasksDiv = document.createElement('div');
+                tasksDiv.className = 'flex flex-col gap-1';
+
+                slotTasks.forEach(task => {
+                    const taskBtn = document.createElement('button');
+                    taskBtn.className = 'flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary';
+                    taskBtn.onclick = () => toggleDailyTask(task.id);
+                    taskBtn.innerHTML = `
+                        <span class="${task.completed ? 'text-accent' : 'text-muted-foreground/40'}">
+                            ${task.completed ? icons.checkCircle : icons.circle}
+                        </span>
+                        <span class="text-sm leading-tight ${
+                            task.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                        }">${task.text}</span>
+                    `;
+                    tasksDiv.appendChild(taskBtn);
+                });
+
+                slotDiv.appendChild(tasksDiv);
+                container.appendChild(slotDiv);
+            });
+
+            if (dailyTasks.length === 0 && weeklyTasks.length === 0) {
+                container.innerHTML = '<div class="py-8 text-center text-sm text-muted-foreground/50">No tasks for this day</div>';
+            }
+        }
+
+        function toggleDailyTask(id) {
+            const task = data.dailyTasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                saveData();
+                renderDaily();
+            }
+        }
+
+        function prevDay() {
+            currentDailyDate.setDate(currentDailyDate.getDate() - 1);
+            renderDaily();
+        }
+
+        function nextDay() {
+            currentDailyDate.setDate(currentDailyDate.getDate() + 1);
+            renderDaily();
+        }
+
+        // Habit Tracker
+        let isAddingHabit = false;
+
+        function renderHabits() {
+            const container = document.getElementById('habitTracker');
+            container.innerHTML = '';
+
+            if (data.habits.length > 0) {
+                const table = document.createElement('div');
+                table.className = 'flex flex-col gap-2 mb-4';
+
+                // Header
+                const header = document.createElement('div');
+                header.className = 'grid grid-cols-[1fr,repeat(7,40px),50px] gap-1 items-center';
+                header.innerHTML = `
+                    <div class="text-xs font-medium text-muted-foreground">Habit</div>
+                    ${['월', '화', '수', '목', '금', '토', '일'].map(d => 
+                        `<div class="text-[10px] font-medium text-center text-muted-foreground">${d}</div>`
+                    ).join('')}
+                    <div class="text-xs font-medium text-right text-muted-foreground">%</div>
+                `;
+                table.appendChild(header);
+
+                // Habits
+                data.habits.forEach(habit => {
+                    const row = document.createElement('div');
+                    row.className = 'grid grid-cols-[1fr,repeat(7,40px),50px] gap-1 items-center group';
+
+                    const nameCell = document.createElement('div');
+                    nameCell.className = 'flex items-center gap-2';
+                    
+                    const name = document.createElement('div');
+                    name.className = 'text-sm text-foreground truncate flex-1';
+                    name.textContent = habit.name;
+                    nameCell.appendChild(name);
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'hidden group-hover:inline-flex shrink-0 text-muted-foreground hover:text-destructive';
+                    removeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+                    removeBtn.onclick = () => removeHabit(habit.id);
+                    nameCell.appendChild(removeBtn);
+
+                    row.appendChild(nameCell);
+
+                    let checkedCount = 0;
+                    for (let day = 0; day < 7; day++) {
+                        const entry = data.habitEntries.find(e => e.habitId === habit.id && e.dayOfWeek === day);
+                        const checked = entry ? entry.completed : false;
+                        if (checked) checkedCount++;
+
+                        const cell = document.createElement('button');
+                        cell.className = `h-6 w-6 rounded-md flex items-center justify-center transition-all ${
+                            checked 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'bg-secondary text-transparent hover:bg-secondary/80 hover:text-muted-foreground/30'
+                        }`;
+                        cell.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                        cell.onclick = () => toggleHabit(habit.id, day);
+                        row.appendChild(cell);
+                    }
+
+                    const percentCell = document.createElement('div');
+                    percentCell.className = 'text-xs text-right text-muted-foreground';
+                    percentCell.textContent = `${Math.round((checkedCount / 7) * 100)}%`;
+                    row.appendChild(percentCell);
+
+                    table.appendChild(row);
+                });
+
+                container.appendChild(table);
+            }
+
+            // Add new habit form
+            if (isAddingHabit) {
+                const inputForm = document.createElement('form');
+                inputForm.className = 'flex items-center gap-2';
+                inputForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const input = inputForm.querySelector('input');
+                    if (input.value.trim()) {
+                        data.habits.push({
+                            id: generateId(),
+                            name: input.value.trim()
+                        });
+                        saveData();
+                    }
+                    isAddingHabit = false;
+                    renderHabits();
+                };
+
+                const input = document.createElement('input');
+                input.className = 'flex-1 rounded-md border bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/30';
+                input.placeholder = 'New habit name...';
+                input.onblur = () => {
+                    setTimeout(() => {
+                        if (input.value.trim()) {
+                            data.habits.push({
+                                id: generateId(),
+                                name: input.value.trim()
+                            });
+                            saveData();
+                        }
+                        isAddingHabit = false;
+                        renderHabits();
+                    }, 100);
+                };
+
+                inputForm.appendChild(input);
+                container.appendChild(inputForm);
+                
+                setTimeout(() => input.focus(), 0);
+            } else {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-muted-foreground';
+                addBtn.onclick = () => {
+                    isAddingHabit = true;
+                    renderHabits();
+                };
+                addBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <span>Add habit</span>
+                `;
+                container.appendChild(addBtn);
+            }
+        }
+
+        function addHabit() {
+            isAddingHabit = true;
+            renderHabits();
+        }
+
+        function removeHabit(habitId) {
+            data.habits = data.habits.filter(h => h.id !== habitId);
+            data.habitEntries = data.habitEntries.filter(e => e.habitId !== habitId);
+            saveData();
+            renderHabits();
+        }
+
+        function toggleHabit(habitId, dayOfWeek) {
+            const index = data.habitEntries.findIndex(e => e.habitId === habitId && e.dayOfWeek === dayOfWeek);
+            
+            if (index >= 0) {
+                data.habitEntries[index].completed = !data.habitEntries[index].completed;
+            } else {
+                data.habitEntries.push({
+                    habitId: habitId,
+                    dayOfWeek: dayOfWeek,
+                    completed: true
+                });
+            }
+
+            saveData();
+            renderHabits();
+        }
+
+        // Monthly Goals
+        let isAddingMonthlyGoal = false;
+
+        function renderMonthlyGoals() {
+            const container = document.getElementById('monthlyGoals');
+            container.innerHTML = '';
+
+            const currentMonth = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+            
+            if (data.monthlyGoals.length > 0) {
+                const completedCount = data.monthlyGoals.filter(g => g.completed).length;
+                const counter = document.createElement('div');
+                counter.className = 'text-xs text-muted-foreground mb-2';
+                counter.textContent = `${completedCount}/${data.monthlyGoals.length} completed`;
+                container.appendChild(counter);
+            }
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-1 mb-2';
+
+            data.monthlyGoals.forEach(goal => {
+                const item = document.createElement('div');
+                item.className = 'group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary';
+                item.innerHTML = `
+                    <button onclick="toggleMonthlyGoal('${goal.id}')" class="shrink-0">
+                        <span class="${goal.completed ? 'text-accent' : 'text-muted-foreground/40'}">
+                            ${goal.completed ? icons.checkCircle : icons.circle}
+                        </span>
+                    </button>
+                    <span class="flex-1 text-sm ${
+                        goal.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                    }">${goal.text}</span>
+                    <button onclick="removeMonthlyGoal('${goal.id}')" 
+                            class="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                `;
+                list.appendChild(item);
+            });
+
+            container.appendChild(list);
+
+            if (isAddingMonthlyGoal) {
+                const inputForm = document.createElement('form');
+                inputForm.className = 'flex items-center gap-2';
+                inputForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const input = inputForm.querySelector('input');
+                    if (input.value.trim()) {
+                        data.monthlyGoals.push({
+                            id: generateId(),
+                            text: input.value.trim(),
+                            completed: false
+                        });
+                        saveData();
+                    }
+                    isAddingMonthlyGoal = false;
+                    renderMonthlyGoals();
+                };
+
+                const input = document.createElement('input');
+                input.className = 'flex-1 rounded-md border bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/30';
+                input.placeholder = 'New monthly goal...';
+                input.onblur = () => {
+                    setTimeout(() => {
+                        if (input.value.trim()) {
+                            data.monthlyGoals.push({
+                                id: generateId(),
+                                text: input.value.trim(),
+                                completed: false
+                            });
+                            saveData();
+                        }
+                        isAddingMonthlyGoal = false;
+                        renderMonthlyGoals();
+                    }, 100);
+                };
+
+                inputForm.appendChild(input);
+                container.appendChild(inputForm);
+                
+                setTimeout(() => input.focus(), 0);
+            } else {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-muted-foreground';
+                addBtn.onclick = () => {
+                    isAddingMonthlyGoal = true;
+                    renderMonthlyGoals();
+                };
+                addBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <span>Add goal</span>
+                `;
+                container.appendChild(addBtn);
+            }
+        }
+
+        function addMonthlyGoal() {
+            isAddingMonthlyGoal = true;
+            renderMonthlyGoals();
+        }
+
+        function toggleMonthlyGoal(id) {
+            const goal = data.monthlyGoals.find(g => g.id === id);
+            if (goal) {
+                goal.completed = !goal.completed;
+                saveData();
+                renderMonthlyGoals();
+            }
+        }
+
+        function removeMonthlyGoal(id) {
+            data.monthlyGoals = data.monthlyGoals.filter(g => g.id !== id);
+            saveData();
+            renderMonthlyGoals();
+        }
+
+        // Yearly Goals
+        let isAddingYearlyGoal = false;
+
+        function renderYearlyGoals() {
+            const container = document.getElementById('yearlyGoals');
+            container.innerHTML = '';
+
+            if (data.yearlyGoals.length > 0) {
+                const completedCount = data.yearlyGoals.filter(g => g.completed).length;
+                const counter = document.createElement('div');
+                counter.className = 'text-xs text-muted-foreground mb-2';
+                counter.textContent = `${completedCount}/${data.yearlyGoals.length} completed`;
+                container.appendChild(counter);
+            }
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-1 mb-2';
+
+            data.yearlyGoals.forEach(goal => {
+                const item = document.createElement('div');
+                item.className = 'group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary';
+                item.innerHTML = `
+                    <button onclick="toggleYearlyGoal('${goal.id}')" class="shrink-0">
+                        <span class="${goal.completed ? 'text-accent' : 'text-muted-foreground/40'}">
+                            ${goal.completed ? icons.checkCircle : icons.circle}
+                        </span>
+                    </button>
+                    <span class="flex-1 text-sm ${
+                        goal.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                    }">${goal.text}</span>
+                    <button onclick="removeYearlyGoal('${goal.id}')" 
+                            class="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                `;
+                list.appendChild(item);
+            });
+
+            container.appendChild(list);
+
+            if (isAddingYearlyGoal) {
+                const inputForm = document.createElement('form');
+                inputForm.className = 'flex items-center gap-2';
+                inputForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const input = inputForm.querySelector('input');
+                    if (input.value.trim()) {
+                        data.yearlyGoals.push({
+                            id: generateId(),
+                            text: input.value.trim(),
+                            completed: false
+                        });
+                        saveData();
+                    }
+                    isAddingYearlyGoal = false;
+                    renderYearlyGoals();
+                };
+
+                const input = document.createElement('input');
+                input.className = 'flex-1 rounded-md border bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/30';
+                input.placeholder = 'New yearly goal...';
+                input.onblur = () => {
+                    setTimeout(() => {
+                        if (input.value.trim()) {
+                            data.yearlyGoals.push({
+                                id: generateId(),
+                                text: input.value.trim(),
+                                completed: false
+                            });
+                            saveData();
+                        }
+                        isAddingYearlyGoal = false;
+                        renderYearlyGoals();
+                    }, 100);
+                };
+
+                inputForm.appendChild(input);
+                container.appendChild(inputForm);
+                
+                setTimeout(() => input.focus(), 0);
+            } else {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-muted-foreground';
+                addBtn.onclick = () => {
+                    isAddingYearlyGoal = true;
+                    renderYearlyGoals();
+                };
+                addBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <span>Add goal</span>
+                `;
+                container.appendChild(addBtn);
+            }
+        }
+
+        function addYearlyGoal() {
+            isAddingYearlyGoal = true;
+            renderYearlyGoals();
+        }
+
+        function toggleYearlyGoal(id) {
+            const goal = data.yearlyGoals.find(g => g.id === id);
+            if (goal) {
+                goal.completed = !goal.completed;
+                saveData();
+                renderYearlyGoals();
+            }
+        }
+
+        function removeYearlyGoal(id) {
+            data.yearlyGoals = data.yearlyGoals.filter(g => g.id !== id);
+            saveData();
+            renderYearlyGoals();
+        }
+
+        // Calendar
+        function renderCalendar() {
+            const year = currentCalendarDate.getFullYear();
+            const month = currentCalendarDate.getMonth();
+
+            document.getElementById('calendarMonth').textContent = 
+                `${year}년 ${month + 1}월`;
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+            const lastDate = lastDay.getDate();
+            const prevLastDay = new Date(year, month, 0);
+
+            const container = document.getElementById('calendar');
+            container.innerHTML = '';
+            container.className = 'grid grid-cols-7 gap-1';
+
+            // Headers
+            ['월', '화', '수', '목', '금', '토', '일'].forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'text-center text-[10px] font-medium text-muted-foreground py-1';
+                header.textContent = day;
+                container.appendChild(header);
+            });
+
+            // Previous month days
+            for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+                const day = document.createElement('div');
+                day.className = 'aspect-square flex items-center justify-center text-xs text-muted-foreground/30';
+                day.textContent = prevLastDay.getDate() - i;
+                container.appendChild(day);
+            }
+
+            // Current month days
+            const today = new Date();
+            for (let date = 1; date <= lastDate; date++) {
+                const currentDate = new Date(year, month, date);
+                const isToday = currentDate.toDateString() === today.toDateString();
+
+                const day = document.createElement('div');
+                day.className = `aspect-square flex items-center justify-center text-xs rounded-md transition-colors cursor-pointer ${
+                    isToday 
+                        ? 'bg-primary text-primary-foreground font-semibold' 
+                        : 'hover:bg-secondary'
+                }`;
+                day.textContent = date;
+                container.appendChild(day);
+            }
+
+            // Next month days
+            const remainingCells = 42 - (firstDayOfWeek + lastDate);
+            for (let date = 1; date <= remainingCells; date++) {
+                const day = document.createElement('div');
+                day.className = 'aspect-square flex items-center justify-center text-xs text-muted-foreground/30';
+                day.textContent = date;
+                container.appendChild(day);
+            }
+        }
+
+        function prevMonth() {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
+            renderCalendar();
+        }
+
+        function nextMonth() {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
+            renderCalendar();
+        }
+
+        // Initialize
+        function init() {
+            loadData();
+            
+            // Set current month and year
+            const now = new Date();
+            document.getElementById('currentMonth').textContent = 
+                now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+            document.getElementById('currentYear').textContent = now.getFullYear();
+            
+            renderWeekly();
+            renderDaily();
+            renderHabits();
+            renderMonthlyGoals();
+            renderYearlyGoals();
+            renderCalendar();
+        }
+
+        init();
+    </script>
+</body>
+</html>
