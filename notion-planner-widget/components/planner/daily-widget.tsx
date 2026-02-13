@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Sunrise,
   Sun,
@@ -15,7 +15,6 @@ import { ko } from "date-fns/locale";
 
 import {
   fetchTasks,
-  createTask,
   toggleTask as toggleTaskApi,
   deleteTask as deleteTaskApi,
 } from "@/lib/tasks-api";
@@ -25,10 +24,11 @@ import {
   type PlannerData,
   type DailyTask,
   formatDate,
-  generateId,
   TIME_SLOT_CONFIG,
   loadData,
 } from "@/lib/planner-store";
+
+import { useSmartRefresh } from "@/lib/useSmartRefresh";
 
 const SLOT_ICONS = {
   morning: Sunrise,
@@ -46,71 +46,47 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
   const isToday = formatDate(new Date()) === dateStr;
 
-  // UI 계산용 (weekly는 이미 Notion에서 불러와 data.weeklyTasks에 들어온다고 가정)
-  const weeklyTasksForDay = data.weeklyTasks.filter((t) => t.date === dateStr);
   const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
-  // ✅ 날짜 바뀔 때 Notion에서 daily tasks 로드
-  useEffect(() => {
-    const run = async () => {
-      const res = await fetchTasks({
-        date_from: dateStr,
-        date_to: dateStr,
-      });
+  // 오늘 tasks를 노션에서 다시 불러와 dailyTasks 캐시 갱신
+  const refreshDaily = useCallback(async () => {
+    const res = await fetchTasks({ date_from: dateStr, date_to: dateStr });
 
-      const dailyFromNotion: DailyTask[] = res.tasks.map((t) => ({
-        id: t.id,
-        text: t.text,
-        timeSlot: t.timeSlot,
-        completed: t.completed,
-        date: t.date,
-      }));
+    const dailyFromNotion: DailyTask[] = res.tasks.map((t: any) => ({
+      id: t.id,
+      text: t.text,
+      timeSlot: t.timeSlot,
+      completed: !!t.completed,
+      date: t.date,
+    }));
 
-      onUpdate({
-        ...data,
-        // 현재 날짜 daily만 교체, 다른 날짜 daily는 유지
-        dailyTasks: [
-          ...data.dailyTasks.filter((x) => x.date !== dateStr),
-          ...dailyFromNotion,
-        ],
-      });
-    };
-
-    run().catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateStr]);
-
-  // ✅ weekly → daily Sync (Notion에 daily task 생성)
-  const syncFromWeekly = async () => {
-    const existingKeys = new Set(
-      dailyTasksForDay.map((t) => `${t.text}-${t.timeSlot}`),
-    );
-    const toCopy = weeklyTasksForDay.filter(
-      (wt) => !existingKeys.has(`${wt.text}-${wt.timeSlot}`),
-    );
-    if (toCopy.length === 0) return;
+    const base = loadData();
     onUpdate({
-      ...data,
+      ...base,
       dailyTasks: [
-        ...data.dailyTasks,
-        ...toCopy.map((wt) => ({
-          id: wt.id,
-          text: wt.text,
-          timeSlot: wt.timeSlot,
-          completed: false,
-          date: dateStr,
-        })),
+        ...base.dailyTasks.filter((x) => x.date !== dateStr),
+        ...dailyFromNotion,
       ],
     });
-  };
+  }, [dateStr, onUpdate]);
 
-  // ✅ 체크 토글 → Notion PATCH
+  const { startBurst } = useSmartRefresh(refreshDaily, {
+    idleIntervalMs: 0,
+    burstIntervalMs: 2000, // 폴링 시간 설정
+    burstDurationMs: 15000,
+  });
+
+  useEffect(() => {
+    refreshDaily().catch(console.error);
+  }, [refreshDaily]);
+
   const toggleTask = async (taskId: string) => {
     const prev = data.dailyTasks.find((t) => t.id === taskId);
     if (!prev) return;
+
     const nextCompleted = !prev.completed;
 
-    // 1) optimistic UI
+    // optimistic
     onUpdate({
       ...data,
       dailyTasks: data.dailyTasks.map((t) =>
@@ -118,9 +94,9 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       ),
     });
 
-    // 2) Notion 반영
     try {
       await toggleTaskApi(taskId, nextCompleted);
+      startBurst();
     } catch (e) {
       // rollback
       onUpdate({
@@ -134,38 +110,20 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   };
 
   const removeDailyTask = async (taskId: string) => {
-    const target = data.dailyTasks.find((t) => t.id === taskId);
-    const toRemoveWeeklyIds =
-      target == null
-        ? []
-        : data.weeklyTasks
-            .filter(
-              (w) =>
-                w.date === target.date &&
-                w.timeSlot === target.timeSlot &&
-                w.text === target.text,
-            )
-            .map((w) => w.id);
-
     const base = loadData();
     onUpdate({
       ...base,
       dailyTasks: base.dailyTasks.filter((t) => t.id !== taskId),
-      weeklyTasks: base.weeklyTasks.filter(
-        (t) => !toRemoveWeeklyIds.includes(t.id),
-      ),
     });
+
     try {
       await deleteTaskApi(taskId);
-      for (const id of toRemoveWeeklyIds) {
-        await deleteTaskApi(id);
-      }
+      startBurst();
     } catch (e) {
       console.error(e);
     }
   };
 
-  // --- 아래는 네 원래 UI 로직 그대로 ---
   const allTasks = dailyTasksForDay.length > 0 ? dailyTasksForDay : [];
   const completedCount = allTasks.filter((t) => t.completed).length;
   const totalCount = allTasks.length;
@@ -216,15 +174,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
         </div>
       )}
 
-      {weeklyTasksForDay.length > 0 && dailyTasksForDay.length === 0 && (
-        <button
-          onClick={syncFromWeekly}
-          className="rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary transition-colors hover:bg-primary/10"
-        >
-          Sync {weeklyTasksForDay.length} tasks from Weekly
-        </button>
-      )}
-
       {(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
         const Icon = SLOT_ICONS[slot];
         const config = TIME_SLOT_CONFIG[slot];
@@ -262,6 +211,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                       {task.text}
                     </span>
                   </button>
+
                   <button
                     onClick={() => removeDailyTask(task.id)}
                     className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
@@ -276,7 +226,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
         );
       })}
 
-      {totalCount === 0 && weeklyTasksForDay.length === 0 && (
+      {totalCount === 0 && (
         <div className="py-8 text-center text-sm text-muted-foreground/50">
           No tasks for this day
         </div>
