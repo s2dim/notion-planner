@@ -54,7 +54,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   useEffect(() => {
     const run = async () => {
       const res = await fetchTasks({
-        scope: "daily",
         date_from: dateStr,
         date_to: dateStr,
       });
@@ -83,73 +82,26 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
   // ✅ weekly → daily Sync (Notion에 daily task 생성)
   const syncFromWeekly = async () => {
-    // 현재 daily(화면) + weekly의 조합에서 중복 방지
-    const existingTexts = new Set(
+    const existingKeys = new Set(
       dailyTasksForDay.map((t) => `${t.text}-${t.timeSlot}`),
     );
-
-    const toCreate = weeklyTasksForDay
-      .filter((wt) => !existingTexts.has(`${wt.text}-${wt.timeSlot}`))
-      .map((wt) => ({
-        text: wt.text,
-        timeSlot: wt.timeSlot,
-      }));
-
-    if (toCreate.length === 0) return;
-
-    // 1) 화면 optimistic 반영(임시 id)
-    const tempTasks: DailyTask[] = toCreate.map((t) => ({
-      id: generateId(),
-      text: t.text,
-      timeSlot: t.timeSlot,
-      completed: false,
-      date: dateStr,
-    }));
-
+    const toCopy = weeklyTasksForDay.filter(
+      (wt) => !existingKeys.has(`${wt.text}-${wt.timeSlot}`),
+    );
+    if (toCopy.length === 0) return;
     onUpdate({
       ...data,
-      dailyTasks: [...data.dailyTasks, ...tempTasks],
-    });
-
-    // 2) Notion에 실제 생성하고 temp를 notion id로 교체
-    try {
-      const createdIds: string[] = [];
-      for (const t of toCreate) {
-        const created = await createTask({
-          text: t.text,
+      dailyTasks: [
+        ...data.dailyTasks,
+        ...toCopy.map((wt) => ({
+          id: wt.id,
+          text: wt.text,
+          timeSlot: wt.timeSlot,
+          completed: false,
           date: dateStr,
-          timeSlot: t.timeSlot,
-          scope: "daily",
-        });
-        createdIds.push(created.task.id);
-      }
-
-      // temp 제거 + created 추가
-      const tempIds = new Set(tempTasks.map((t) => t.id));
-
-      onUpdate({
-        ...data,
-        dailyTasks: data.dailyTasks
-          .filter((t) => !tempIds.has(t.id))
-          .concat(
-            toCreate.map((t, idx) => ({
-              id: createdIds[idx],
-              text: t.text,
-              timeSlot: t.timeSlot,
-              completed: false,
-              date: dateStr,
-            })),
-          ),
-      });
-    } catch (e) {
-      // 실패하면 temp rollback
-      const tempIds = new Set(tempTasks.map((t) => t.id));
-      onUpdate({
-        ...data,
-        dailyTasks: data.dailyTasks.filter((t) => !tempIds.has(t.id)),
-      });
-      console.error(e);
-    }
+        })),
+      ],
+    });
   };
 
   // ✅ 체크 토글 → Notion PATCH

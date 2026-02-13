@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { notion, NOTION_TASKS_DB_ID } from "@/lib/notion";
 
-type Scope = "weekly" | "daily";
 type Slot = "morning" | "afternoon" | "evening";
 
 function toISODateOnly(dateStr: string) {
@@ -14,7 +13,6 @@ function toISODateOnly(dateStr: string) {
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const scope = searchParams.get("scope") as Scope | null;
   const dateFrom = searchParams.get("date_from");
   const dateTo = searchParams.get("date_to");
 
@@ -45,13 +43,6 @@ export async function GET(req: Request) {
     ],
   };
 
-  if (scope) {
-    filter.and.push({
-      property: "Scope",
-      select: { equals: scope },
-    });
-  }
-
   const result = await notion.databases.query({
     database_id: NOTION_TASKS_DB_ID,
     filter,
@@ -68,7 +59,6 @@ export async function GET(req: Request) {
       text: props.Name?.title?.[0]?.plain_text ?? "",
       date: props.Date?.date?.start ?? "",
       timeSlot: (props.Slot?.select?.name ?? "morning") as Slot,
-      scope: (props.Scope?.select?.name ?? "daily") as Scope,
       completed: !!props.Done?.checkbox,
     };
   });
@@ -78,11 +68,10 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { text, date, timeSlot, scope } = body as {
+  const { text, date, timeSlot } = body as {
     text: string;
     date: string;
     timeSlot: Slot;
-    scope: Scope;
   };
 
   if (!text?.trim()) {
@@ -95,7 +84,6 @@ export async function POST(req: Request) {
       Name: { title: [{ text: { content: text.trim() } }] },
       Date: { date: { start: toISODateOnly(date) } },
       Slot: { select: { name: timeSlot } },
-      Scope: { select: { name: scope } },
       Done: { checkbox: false },
     },
   });

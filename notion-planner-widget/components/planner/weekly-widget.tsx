@@ -3,16 +3,7 @@
  import { useState, useCallback, useEffect } from "react";
  import { startOfWeek, endOfWeek, addWeeks, subWeeks } from "date-fns";
  import { fetchTasks, createTask, deleteTask } from "@/lib/tasks-api";
- import {
-   ChevronLeft,
-   ChevronRight,
-   Plus,
-   X,
-   Sun,
-   Moon,
-   Sunrise,
- } from "lucide-react";
- 
+ import { ChevronLeft, ChevronRight, Plus, X, Sun, Moon, Sunrise } from "lucide-react";
  import {
    type TimeSlot,
    type PlannerData,
@@ -25,11 +16,7 @@
    loadData,
  } from "@/lib/planner-store";
  
- const SLOT_ICONS = {
-   morning: Sunrise,
-   afternoon: Sun,
-   evening: Moon,
- };
+ const SLOT_ICONS = { morning: Sunrise, afternoon: Sun, evening: Moon };
  
  interface WeeklyWidgetProps {
    data: PlannerData;
@@ -57,7 +44,7 @@
        const date_from = formatDate(start);
        const date_to = formatDate(end);
  
-       const res = await fetchTasks({ scope: "weekly", date_from, date_to });
+       const res = await fetchTasks({ date_from, date_to });
        const weeklyFromNotion = res.tasks.map((t) => ({
          id: t.id,
          text: t.text,
@@ -82,97 +69,81 @@
      const text = newTaskText.trim();
      if (!text) return;
  
+     const existing =
+       data.dailyTasks.find((t) => t.date === date && t.timeSlot === slot && t.text === text) ||
+       data.weeklyTasks.find((t) => t.date === date && t.timeSlot === slot && t.text === text);
+ 
+     if (existing) {
+       const base = loadData();
+       const hasWeekly = base.weeklyTasks.some((t) => t.id === existing.id);
+       const hasDaily = base.dailyTasks.some((t) => t.id === existing.id);
+       onUpdate({
+         ...base,
+         weeklyTasks: hasWeekly
+           ? base.weeklyTasks
+           : [...base.weeklyTasks, { id: existing.id, text, timeSlot: slot, date }],
+         dailyTasks: hasDaily
+           ? base.dailyTasks
+           : [...base.dailyTasks, { id: existing.id, text, timeSlot: slot, completed: false, date }],
+       });
+       setNewTaskText("");
+       setEditingSlot(null);
+       return;
+     }
+ 
      const tempId = generateId();
-     const existsDaily = data.dailyTasks.some(
-       (t) => t.date === date && t.timeSlot === slot && t.text === text,
-     );
-     const tempDailyId = existsDaily ? null : generateId();
+     const tempDailyId = tempId;
  
      const base0 = loadData();
      onUpdate({
        ...base0,
        weeklyTasks: [...base0.weeklyTasks, { id: tempId, text, timeSlot: slot, date }],
-       dailyTasks:
-         tempDailyId == null
-           ? base0.dailyTasks
-           : [
-               ...base0.dailyTasks,
-               { id: tempDailyId, text, timeSlot: slot, completed: false, date },
-             ],
+       dailyTasks: [
+         ...base0.dailyTasks,
+         { id: tempDailyId, text, timeSlot: slot, completed: false, date },
+       ],
      });
  
      setNewTaskText("");
      setEditingSlot(null);
  
      try {
-       const createdWeekly = await createTask({
-         text,
-         date,
-         timeSlot: slot,
-         scope: "weekly",
-       });
+       const created = await createTask({ text, date, timeSlot: slot });
+       const realId = created.task.id;
  
        const base1 = loadData();
        onUpdate({
          ...base1,
          weeklyTasks: base1.weeklyTasks.map((t) =>
-           t.id === tempId ? { id: createdWeekly.task.id, text, timeSlot: slot, date } : t,
+           t.id === tempId ? { id: realId, text, timeSlot: slot, date } : t,
+         ),
+         dailyTasks: base1.dailyTasks.map((t) =>
+           t.id === tempDailyId
+             ? { id: realId, text, timeSlot: slot, completed: false, date }
+             : t,
          ),
        });
- 
-       if (tempDailyId != null) {
-         const createdDaily = await createTask({
-           text,
-           date,
-           timeSlot: slot,
-           scope: "daily",
-         });
-         const base2 = loadData();
-         onUpdate({
-           ...base2,
-           dailyTasks: base2.dailyTasks.map((t) =>
-             t.id === tempDailyId
-               ? { id: createdDaily.task.id, text, timeSlot: slot, completed: false, date }
-               : t,
-           ),
-         });
-       }
      } catch (e) {
        const baseErr = loadData();
        onUpdate({
          ...baseErr,
          weeklyTasks: baseErr.weeklyTasks.filter((t) => t.id !== tempId),
-         dailyTasks:
-           tempDailyId == null
-             ? baseErr.dailyTasks
-             : baseErr.dailyTasks.filter((t) => t.id !== tempDailyId),
+         dailyTasks: baseErr.dailyTasks.filter((t) => t.id !== tempDailyId),
        });
        console.error(e);
      }
    };
  
    const removeTask = async (taskId: string) => {
-     const target = data.weeklyTasks.find((t) => t.id === taskId);
-     const toRemoveDailyIds = target
-       ? data.dailyTasks
-           .filter(
-             (d) => d.date === target.date && d.timeSlot === target.timeSlot && d.text === target.text,
-           )
-           .map((d) => d.id)
-       : [];
- 
      const baseDel = loadData();
      onUpdate({
        ...baseDel,
        weeklyTasks: baseDel.weeklyTasks.filter((t) => t.id !== taskId),
-       dailyTasks: baseDel.dailyTasks.filter((t) => !toRemoveDailyIds.includes(t.id)),
+       dailyTasks: baseDel.dailyTasks.filter((t) => t.id !== taskId),
      });
  
      try {
        await deleteTask(taskId);
-       for (const id of toRemoveDailyIds) {
-         await deleteTask(id);
-       }
      } catch (e) {
        console.error(e);
      }
@@ -217,7 +188,7 @@
            return (
              <div
                key={dateStr}
-               className={`flex min-h_[200px] flex-col rounded-lg border p-3 transition-shadow ${
+               className={`flex min-h-[200px] flex-col rounded-lg border p-3 transition-shadow ${
                  isToday ? "border-primary/40 bg-primary/5 shadow-sm" : "border-border bg-card"
                }`}
              >
@@ -271,8 +242,7 @@
                              value={newTaskText}
                              onChange={(e) => setNewTaskText(e.target.value)}
                              onBlur={() => {
-                               if (newTaskText.trim()) addTask(dateStr, slot);
-                               else setEditingSlot(null);
+                               setEditingSlot(null);
                              }}
                              placeholder="..."
                              className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
