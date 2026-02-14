@@ -426,6 +426,9 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                           )}
                           <div
                             onDragOver={(e) => e.preventDefault()}
+                            onDragLeave={() => {
+                              setDragOverId(null);
+                            }}
                             onDrop={async (e) => {
                               const raw =
                                 e.dataTransfer.getData("application/json");
@@ -459,6 +462,8 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                       ? null
                                       : tasks.length || 0,
                                   });
+                                  setDraggingId(null);
+                                  setDragOverId(null);
                                   publishTasksChanged("weekly");
                                   startBurst();
                                 } catch (err) {

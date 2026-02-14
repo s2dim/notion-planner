@@ -209,6 +209,9 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
             <div
               className="flex flex-col gap-1"
               onDragOver={(e) => e.preventDefault()}
+              onDragLeave={() => {
+                setDragOverId(null);
+              }}
               onDrop={async (e) => {
                 const raw = e.dataTransfer.getData("application/json");
                 if (!raw) return;
@@ -224,6 +227,8 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                   onUpdate({ ...baseMove, dailyTasks: nextList });
                   try {
                     await updateTask({ id: payload.id, timeSlot: slot });
+                    setDraggingId(null);
+                    setDragOverId(null);
                     publishTasksChanged("daily");
                     startBurst();
                   } catch (err) {
