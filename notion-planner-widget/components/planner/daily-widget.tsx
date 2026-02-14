@@ -38,17 +38,48 @@ const SLOT_ICONS = {
   evening: Moon,
 };
 
+type DropPosition = "before" | "after";
+type DragOverState = { id: string; pos: DropPosition } | null;
+
 interface DailyWidgetProps {
   data: PlannerData;
   onUpdate: (data: PlannerData) => void;
+}
+
+function getDropPosition(e: React.DragEvent, el: HTMLElement): DropPosition {
+  const rect = el.getBoundingClientRect();
+  const offset = e.clientY - rect.top;
+  return offset < rect.height / 2 ? "before" : "after";
+}
+
+function reorderIds(params: {
+  bucketIds: string[];
+  movingId: string;
+  targetId: string;
+  position: DropPosition;
+}) {
+  const { bucketIds, movingId, targetId, position } = params;
+  const without = bucketIds.filter((id) => id !== movingId);
+  const targetIndex = without.indexOf(targetId);
+  const insertAt =
+    targetIndex === -1
+      ? without.length
+      : position === "before"
+        ? targetIndex
+        : targetIndex + 1;
+
+  const next = without.slice();
+  next.splice(insertAt, 0, movingId);
+  return next;
 }
 
 export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
   const isToday = formatDate(new Date()) === dateStr;
+
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<DragOverState>(null);
 
   const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
@@ -61,7 +92,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       timeSlot: t.timeSlot,
       completed: !!t.completed,
       date: t.date,
-
       order: typeof t.order === "number" ? t.order : null,
     }));
 
@@ -192,6 +222,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       {(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
         const Icon = SLOT_ICONS[slot];
         const config = TIME_SLOT_CONFIG[slot];
+
         const slotTasks = allTasks
           .filter((t) => t.timeSlot === slot)
           .slice()
@@ -215,7 +246,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
             <div
               className="flex flex-col gap-1"
               onDragOver={(e) => e.preventDefault()}
-              onDragLeave={() => setDragOverId(null)}
+              onDragLeave={() => setDragOver(null)}
               onDrop={async (e) => {
                 const raw = e.dataTransfer.getData("application/json");
                 if (!raw) return;
@@ -261,7 +292,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                       order: payload.fromSlot === slot ? null : before.length,
                     });
                     setDraggingId(null);
-                    setDragOverId(null);
+                    setDragOver(null);
                     publishTasksChanged("daily");
                     startBurst();
                   } catch (err) {
@@ -272,65 +303,45 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                 }
               }}
             >
-              {slotTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={`group relative w-full min-w-0 ${
-                    draggingId === task.id ? "rounded-md bg-secondary/60" : ""
-                  } ${
-                    dragOverId === task.id
-                      ? "rounded-md ring-1 ring-primary/30"
-                      : ""
-                  }`}
-                  draggable
-                  onDragStart={(e) => {
-                    setDraggingId(task.id);
-                    e.dataTransfer.setData(
-                      "application/json",
-                      JSON.stringify({ id: task.id, fromSlot: slot }),
-                    );
-                  }}
-                  onDragEnd={() => {
-                    setDraggingId(null);
-                    setDragOverId(null);
-                  }}
-                  onDragEnter={() => setDragOverId(task.id)}
-                  onDragLeave={() => setDragOverId(null)}
-                >
-                  <div className="flex min-w-0 items-start gap-1">
-                    <button
-                      onClick={() => toggleTask(task.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
-                    >
-                      {task.completed ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-                      ) : (
-                        <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                      )}
+              {slotTasks.map((task) => {
+                const showLine =
+                  draggingId &&
+                  draggingId !== task.id &&
+                  dragOver?.id === task.id;
 
-                      <span
-                        className={`min-w-0 flex-1 whitespace-normal text-sm leading-tight ${
-                          task.completed
-                            ? "text-muted-foreground line-through"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {task.text}
-                      </span>
-                    </button>
-
-                    <button
-                      onClick={() => removeDailyTask(task.id)}
-                      className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
-                      aria-label={`Remove task: ${task.text}`}
-                    >
-                      ×
-                    </button>
-                  </div>
-
+                return (
                   <div
-                    onDragOver={(e) => e.preventDefault()}
+                    key={task.id}
+                    className={`group relative w-full min-w-0 rounded-md ${
+                      draggingId === task.id ? "bg-secondary/60" : ""
+                    } ${dragOver?.id === task.id ? "bg-secondary/40" : ""}`}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggingId(task.id);
+                      e.dataTransfer.setData(
+                        "application/json",
+                        JSON.stringify({ id: task.id, fromSlot: slot }),
+                      );
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDragOver(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (!draggingId || draggingId === task.id) return;
+                      setDragOver({
+                        id: task.id,
+                        pos: getDropPosition(e, e.currentTarget),
+                      });
+                    }}
+                    onDragLeave={() => {
+                      setDragOver((prev) =>
+                        prev?.id === task.id ? null : prev,
+                      );
+                    }}
                     onDrop={async (e) => {
+                      e.preventDefault();
                       const raw = e.dataTransfer.getData("application/json");
                       if (!raw) return;
 
@@ -341,7 +352,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                         };
 
                         const baseMove = loadData();
-
                         const bucketBefore = baseMove.dailyTasks
                           .filter(
                             (t: any) =>
@@ -355,38 +365,42 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                           )
                           .map((t: any) => t.id);
 
-                        const destIndex = bucketBefore.indexOf(task.id);
-                        const bucketAfter = bucketBefore
-                          .filter((id) => id !== payload.id)
-                          .slice();
+                        const position: DropPosition =
+                          dragOver?.id === task.id ? dragOver.pos : "after";
 
-                        bucketAfter.splice(
-                          destIndex === -1 ? bucketAfter.length : destIndex,
-                          0,
-                          payload.id,
-                        );
+                        const bucketAfter = reorderIds({
+                          bucketIds: bucketBefore,
+                          movingId: payload.id,
+                          targetId: task.id,
+                          position,
+                        });
 
                         const nextDaily = baseMove.dailyTasks.map((t: any) => {
-                          if (bucketAfter.includes(t.id)) {
-                            const idx = bucketAfter.indexOf(t.id);
-                            const isTarget = t.id === payload.id;
+                          if (
+                            !bucketAfter.includes(t.id) &&
+                            t.id !== payload.id
+                          )
+                            return t;
 
-                            if (isTarget) {
-                              return {
-                                ...t,
-                                date: dateStr,
-                                timeSlot: slot,
-                                order: idx,
-                              };
-                            }
+                          const idx = bucketAfter.indexOf(
+                            t.id === payload.id ? payload.id : t.id,
+                          );
+                          const isInTargetBucket =
+                            t.date === dateStr && t.timeSlot === slot;
 
-                            if (t.date === dateStr && t.timeSlot === slot) {
-                              return {
-                                ...t,
-                                order: idx,
-                              };
-                            }
+                          if (t.id === payload.id) {
+                            return {
+                              ...t,
+                              date: dateStr,
+                              timeSlot: slot,
+                              order: idx,
+                            };
                           }
+
+                          if (isInTargetBucket) {
+                            return { ...t, order: idx };
+                          }
+
                           return t;
                         });
 
@@ -411,7 +425,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                           }
 
                           setDraggingId(null);
-                          setDragOverId(null);
+                          setDragOver(null);
                           publishTasksChanged("daily");
                           startBurst();
                         } catch (err) {
@@ -421,10 +435,48 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                         // ignore
                       }
                     }}
-                    className="mt-0.5 h-0.5 w-full"
-                  />
-                </div>
-              ))}
+                  >
+                    {showLine && (
+                      <div
+                        className={`pointer-events-none absolute left-0 right-0 h-0.5 bg-primary ${
+                          dragOver?.pos === "before" ? "top-0" : "bottom-0"
+                        }`}
+                      />
+                    )}
+
+                    <div className="flex min-w-0 items-start gap-1">
+                      <button
+                        onClick={() => toggleTask(task.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
+                      >
+                        {task.completed ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
+                        ) : (
+                          <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                        )}
+
+                        <span
+                          className={`min-w-0 flex-1 whitespace-normal text-sm leading-tight ${
+                            task.completed
+                              ? "text-muted-foreground line-through"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {task.text}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => removeDailyTask(task.id)}
+                        className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                        aria-label={`Remove task: ${task.text}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
