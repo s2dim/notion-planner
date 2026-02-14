@@ -26,48 +26,17 @@ const SLOT_ICONS = {
   evening: Moon,
 };
 
-type DropPosition = "before" | "after";
-type DragOverState = { id: string; pos: DropPosition } | null;
-
 interface WeeklyWidgetProps {
   data: PlannerData;
   onUpdate: (data: PlannerData) => void;
-}
-
-function getDropPosition(e: React.DragEvent, el: HTMLElement): DropPosition {
-  const rect = el.getBoundingClientRect();
-  const offset = e.clientY - rect.top;
-  return offset < rect.height / 2 ? "before" : "after";
-}
-
-function reorderIds(params: {
-  bucketIds: string[];
-  movingId: string;
-  targetId: string;
-  position: DropPosition;
-}) {
-  const { bucketIds, movingId, targetId, position } = params;
-  const without = bucketIds.filter((id) => id !== movingId);
-  const targetIndex = without.indexOf(targetId);
-  const insertAt =
-    targetIndex === -1
-      ? without.length
-      : position === "before"
-        ? targetIndex
-        : targetIndex + 1;
-
-  const next = without.slice();
-  next.splice(insertAt, 0, movingId);
-  return next;
 }
 
 export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [editingSlot, setEditingSlot] = useState<{ date: string; slot: TimeSlot } | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
-
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<DragOverState>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const weekDays = getCurrentWeekDays(currentDate);
   const weekLabel = getWeekLabel(currentDate);
@@ -130,7 +99,6 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
 
     const tempId = generateId();
     const base0 = loadData();
-
     onUpdate({
       ...base0,
       weeklyTasks: [...base0.weeklyTasks, { id: tempId, text, timeSlot: slot, date }],
@@ -230,265 +198,177 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                   {formatDateShort(day)}
                 </div>
 
-                {(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
-                  const Icon = SLOT_ICONS[slot];
-                  const config = TIME_SLOT_CONFIG[slot];
+{(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
+  const Icon = SLOT_ICONS[slot];
+  const config = TIME_SLOT_CONFIG[slot];
 
-                  const tasks = getTasksForDaySlot(dateStr, slot)
-                    .slice()
-                    .sort(
-                      (a: any, b: any) =>
-                        (a.order ?? Number.MAX_SAFE_INTEGER) -
-                        (b.order ?? Number.MAX_SAFE_INTEGER),
-                    );
+  const tasks = getTasksForDaySlot(dateStr, slot)
+    .slice()
+    .sort(
+      (a: any, b: any) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) -
+        (b.order ?? Number.MAX_SAFE_INTEGER),
+    );
 
-                  const isEditing = editingSlot?.date === dateStr && editingSlot?.slot === slot;
+  const isEditing =
+    editingSlot?.date === dateStr &&
+    editingSlot?.slot === slot;
 
-                  return (
-                    <div key={slot} className="mb-2 last:mb-0">
-                      <div className="mb-1 flex items-center gap-1">
-                        <Icon className={`h-3 w-3 ${config.colorClass}`} />
-                        <span className="text-[10px] text-muted-foreground">{config.label}</span>
-                      </div>
+  return (
+    <div key={slot} className="mb-2 last:mb-0">
+      <div className="mb-1 flex items-center gap-1">
+        <Icon className={`h-3 w-3 ${config.colorClass}`} />
+        <span className="text-[10px] text-muted-foreground">
+          {config.label}
+        </span>
+      </div>
 
-                      <div className="flex flex-col gap-0.5">
-                        {tasks.map((task) => {
-                          const showLine =
-                            draggingId && draggingId !== task.id && dragOver?.id === task.id;
+      <div
+        className="flex flex-col gap-0.5 min-h-[20px]"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={async (e) => {
+          const raw = e.dataTransfer.getData("application/json");
+          if (!raw) return;
 
-                          return (
-                            <div
-                              key={task.id}
-                              className={`group relative w-full min-w-0 rounded-md ${
-                                draggingId === task.id ? "bg-secondary/60" : ""
-                              } ${dragOver?.id === task.id ? "bg-secondary/40" : ""}`}
-                              draggable
-                              onDragStart={(e) => {
-                                setDraggingId(task.id);
-                                e.dataTransfer.setData(
-                                  "application/json",
-                                  JSON.stringify({
-                                    id: task.id,
-                                    fromDate: dateStr,
-                                    fromSlot: slot,
-                                  }),
-                                );
-                              }}
-                              onDragEnd={() => {
-                                setDraggingId(null);
-                                setDragOver(null);
-                              }}
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                if (!draggingId || draggingId === task.id) return;
-                                setDragOver({
-                                  id: task.id,
-                                  pos: getDropPosition(e, e.currentTarget),
-                                });
-                              }}
-                              onDragLeave={() => {
-                                setDragOver((prev) => (prev?.id === task.id ? null : prev));
-                              }}
-                              onDrop={async (e) => {
-                                e.preventDefault();
-                                const raw = e.dataTransfer.getData("application/json");
-                                if (!raw) return;
+          try {
+            const payload = JSON.parse(raw) as {
+              id: string;
+              fromDate: string;
+              fromSlot: TimeSlot;
+            };
 
-                                try {
-                                  const payload = JSON.parse(raw) as {
-                                    id: string;
-                                    fromDate: string;
-                                    fromSlot: TimeSlot;
-                                  };
+            const baseMove = loadData();
 
-                                  const baseMove = loadData();
+            const bucketBefore = baseMove.weeklyTasks
+              .filter(
+                (t: any) =>
+                  t.date === dateStr && t.timeSlot === slot,
+              )
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  (a.order ?? Number.MAX_SAFE_INTEGER) -
+                  (b.order ?? Number.MAX_SAFE_INTEGER),
+              )
+              .map((t: any) => t.id);
 
-                                  const bucketBefore = baseMove.weeklyTasks
-                                    .filter(
-                                      (t: any) =>
-                                        t.date === dateStr && t.timeSlot === slot,
-                                    )
-                                    .slice()
-                                    .sort(
-                                      (a: any, b: any) =>
-                                        (a.order ?? Number.MAX_SAFE_INTEGER) -
-                                        (b.order ?? Number.MAX_SAFE_INTEGER),
-                                    )
-                                    .map((t: any) => t.id);
+            // 맨 끝에 삽입
+            const bucketAfter = bucketBefore
+              .filter((id) => id !== payload.id)
+              .concat(payload.id);
 
-                                  const position: DropPosition =
-                                    dragOver?.id === task.id ? dragOver.pos : "after";
+            const nextWeekly = baseMove.weeklyTasks.map((t: any) => {
+              if (!bucketAfter.includes(t.id) && t.id !== payload.id)
+                return t;
 
-                                  const bucketAfter = reorderIds({
-                                    bucketIds: bucketBefore,
-                                    movingId: payload.id,
-                                    targetId: task.id,
-                                    position,
-                                  });
+              const idx =
+                bucketAfter.indexOf(
+                  t.id === payload.id ? payload.id : t.id,
+                );
 
-                                  const nextWeekly = baseMove.weeklyTasks.map((t: any) => {
-                                    if (!bucketAfter.includes(t.id) && t.id !== payload.id) return t;
+              if (t.id === payload.id) {
+                return {
+                  ...t,
+                  date: dateStr,
+                  timeSlot: slot,
+                  order: idx,
+                };
+              }
 
-                                    const idx =
-                                      bucketAfter.indexOf(t.id === payload.id ? payload.id : t.id);
+              if (t.date === dateStr && t.timeSlot === slot) {
+                return { ...t, order: idx };
+              }
 
-                                    if (t.id === payload.id) {
-                                      return {
-                                        ...t,
-                                        date: dateStr,
-                                        timeSlot: slot,
-                                        order: idx,
-                                      };
-                                    }
+              return t;
+            });
 
-                                    if (t.date === dateStr && t.timeSlot === slot) {
-                                      return { ...t, order: idx };
-                                    }
+            onUpdate({ ...baseMove, weeklyTasks: nextWeekly });
 
-                                    return t;
-                                  });
+            for (const u of nextWeekly.filter(
+              (t: any) =>
+                t.date === dateStr && t.timeSlot === slot,
+            )) {
+              await updateTask({
+                id: u.id,
+                date: u.date,
+                timeSlot: u.timeSlot,
+                order: u.order ?? null,
+              });
+            }
 
-                                  onUpdate({ ...baseMove, weeklyTasks: nextWeekly });
+            publishTasksChanged("weekly");
+            startBurst();
+          } catch {
+            // ignore
+          }
+        }}
+      >
+        {/* 1️⃣ 태스크 먼저 렌더 */}
+        {tasks.map((task) => (
+          <div
+            key={task.id}
+            className="group relative w-full min-w-0"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                "application/json",
+                JSON.stringify({
+                  id: task.id,
+                  fromDate: dateStr,
+                  fromSlot: slot,
+                }),
+              );
+            }}
+          >
+            <div className="flex min-w-0 items-start gap-1">
+              <span className="flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight text-foreground">
+                {task.text}
+              </span>
 
-                                  try {
-                                    const updates = nextWeekly
-                                      .filter((t: any) => bucketAfter.includes(t.id))
-                                      .slice()
-                                      .sort(
-                                        (a: any, b: any) =>
-                                          (a.order ?? Number.MAX_SAFE_INTEGER) -
-                                          (b.order ?? Number.MAX_SAFE_INTEGER),
-                                      );
+              <button
+                onClick={() => removeTask(task.id)}
+                className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          </div>
+        ))}
 
-                                    for (const u of updates) {
-                                      await updateTask({
-                                        id: u.id,
-                                        date: u.date,
-                                        timeSlot: u.timeSlot,
-                                        order: u.order ?? null,
-                                      });
-                                    }
+        {/* 2️⃣ 그 다음 항상 + */}
+        {isEditing ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              addTask(dateStr, slot);
+            }}
+            className="flex"
+          >
+            <input
+              autoFocus
+              value={newTaskText}
+              onChange={(e) => setNewTaskText(e.target.value)}
+              onBlur={() => setEditingSlot(null)}
+              placeholder="..."
+              className="w-full bg-transparent text-[11px] text-foreground outline-none"
+            />
+          </form>
+        ) : (
+          <button
+            onClick={() => {
+              setEditingSlot({ date: dateStr, slot });
+              setNewTaskText("");
+            }}
+            className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+          >
+            <Plus className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+})}
 
-                                    setDraggingId(null);
-                                    setDragOver(null);
-                                    publishTasksChanged("weekly");
-                                    startBurst();
-                                  } catch (err) {
-                                    console.error(err);
-                                  }
-                                } catch {
-                                  // ignore
-                                }
-                              }}
-                            >
-                              {showLine && (
-                                <div
-                                  className={`pointer-events-none absolute left-0 right-0 h-0.5 bg-primary ${
-                                    dragOver?.pos === "before" ? "top-0" : "bottom-0"
-                                  }`}
-                                />
-                              )}
-
-                              <div className="flex min-w-0 items-start gap-1">
-                                <span
-                                  className={`flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight ${
-                                    (task as any).completed
-                                      ? "text-muted-foreground line-through"
-                                      : "text-foreground"
-                                  }`}
-                                >
-                                  {task.text}
-                                </span>
-
-                                <button
-                                  onClick={() => removeTask(task.id)}
-                                  className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
-                                  aria-label={`Remove task: ${task.text}`}
-                                >
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {isEditing ? (
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              addTask(dateStr, slot);
-                            }}
-                            className="flex"
-                          >
-                            <input
-                              autoFocus
-                              value={newTaskText}
-                              onChange={(e) => setNewTaskText(e.target.value)}
-                              onBlur={() => setEditingSlot(null)}
-                              placeholder="..."
-                              className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
-                            />
-                          </form>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setEditingSlot({ date: dateStr, slot });
-                              setNewTaskText("");
-                            }}
-                            className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
-                          >
-                            <Plus className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-
-                        <div
-                          onDragOver={(e) => e.preventDefault()}
-                          onDragLeave={() => setDragOver(null)}
-                          onDrop={async (e) => {
-                            const raw = e.dataTransfer.getData("application/json");
-                            if (!raw) return;
-
-                            try {
-                              const payload = JSON.parse(raw) as {
-                                id: string;
-                                fromDate: string;
-                                fromSlot: TimeSlot;
-                              };
-
-                              const baseMove = loadData();
-                              const isSameBucket =
-                                payload.fromDate === dateStr && payload.fromSlot === slot;
-
-                              const nextList = baseMove.weeklyTasks.map((t: any) =>
-                                t.id === payload.id ? { ...t, date: dateStr, timeSlot: slot } : t,
-                              );
-
-                              onUpdate({ ...baseMove, weeklyTasks: nextList });
-
-                              try {
-                                await updateTask({
-                                  id: payload.id,
-                                  date: dateStr,
-                                  timeSlot: slot,
-                                  order: isSameBucket ? null : tasks.length || 0,
-                                });
-                                setDraggingId(null);
-                                setDragOver(null);
-                                publishTasksChanged("weekly");
-                                startBurst();
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            } catch {
-                              // ignore
-                            }
-                          }}
-                          className="h-6"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             );
           })}
