@@ -1,54 +1,54 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const NOTION_HOST_HINTS = ["notion.so", "www.notion.so", "notion.site"];
+const COOKIE_NAME = "widget_session";
+const EMBED_KEY = process.env.WIDGET_EMBED_KEY || "";
 
-function isFromNotion(req: NextRequest) {
-  const origin = req.headers.get("origin") || "";
-  const referer = req.headers.get("referer") || "";
-  const combined = `${origin} ${referer}`;
-  return NOTION_HOST_HINTS.some((h) => combined.includes(h));
-}
-
-function isFromSelf(req: NextRequest) {
-  const referer = req.headers.get("referer") || "";
-  const host = req.nextUrl.host || "";
-  return referer.includes(host);
+function allowStatic(path: string) {
+  return (
+    path.startsWith("/_next") ||
+    path === "/favicon.ico" ||
+    path.startsWith("/assets")
+  );
 }
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const isDev = process.env.NODE_ENV !== "production";
 
-  // Allow static assets
-  if (
-    path.startsWith("/_next") ||
-    path === "/favicon.ico" ||
-    path.startsWith("/assets")
-  ) {
+  if (allowStatic(path)) return NextResponse.next();
+
+  // API는 위젯 세션 쿠키가 있어야 허용
+  if (path.startsWith("/api/")) {
+    if (isDev) return NextResponse.next();
+    const hasSession = !!req.cookies.get(COOKIE_NAME)?.value;
+    if (!hasSession) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     return NextResponse.next();
   }
 
-  // API: 허용 기준 완화
-  // - same-origin 요청(위젯 내부) 또는 Notion에서 온 요청 허용
-  if (path.startsWith("/api/")) {
-    if (isDev) return NextResponse.next();
-    if (isFromSelf(req) || isFromNotion(req)) return NextResponse.next();
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Widget pages: Notion에서 임베드된 경우만 허용 (sec-fetch-dest는 브라우저/환경마다 상이할 수 있어 제거)
+  // 위젯 페이지: ?key=EMBED_KEY
   if (path.startsWith("/widget/")) {
     if (isDev) return NextResponse.next();
-    if (isFromNotion(req)) return NextResponse.next();
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const key = req.nextUrl.searchParams.get("key");
+    if (!EMBED_KEY || key !== EMBED_KEY) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const res = NextResponse.next();
+    res.cookies.set(COOKIE_NAME, "1", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+      maxAge: 60 * 60,
+    });
+    return res;
   }
 
-  // Block other pages in production
   if (!isDev) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
   return NextResponse.next();
 }
 
