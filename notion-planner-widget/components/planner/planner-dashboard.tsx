@@ -50,7 +50,7 @@ export function PlannerDashboard({ mode = "all" }: { mode?: DashboardMode }) {
   const showHeader = mode === "all";
 
   const containerClass =
-    mode === "all"
+    mode === "all" || mode === "weekly"
       ? "mx-auto max-w-[1400px] px-4 py-8"
       : "mx-auto max-w-[900px] px-4 py-6";
 
