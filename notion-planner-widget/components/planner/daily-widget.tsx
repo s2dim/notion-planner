@@ -257,7 +257,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                     fromSlot: TimeSlot;
                   };
 
-                  const baseMove = loadData();
+                  const baseMove = data;
                   const before = baseMove.dailyTasks
                     .filter(
                       (t: any) => t.date === dateStr && t.timeSlot === slot,
@@ -351,7 +351,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                           fromSlot: TimeSlot;
                         };
 
-                        const baseMove = loadData();
+                        const baseMove = data;
                         const bucketBefore = baseMove.dailyTasks
                           .filter(
                             (t: any) =>
@@ -444,10 +444,10 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                       />
                     )}
 
-                    <div className="flex min-w-0 items-start gap-1">
+                    <div className="relative">
                       <button
                         onClick={() => toggleTask(task.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
+                        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-secondary"
                       >
                         {task.completed ? (
                           <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
@@ -468,7 +468,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
                       <button
                         onClick={() => removeDailyTask(task.id)}
-                        className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                        className="absolute right-2 top-1/2 hidden -translate-y-1/2 text-muted-foreground hover:text-destructive group-hover:inline-flex"
                         aria-label={`Remove task: ${task.text}`}
                       >
                         ×
