@@ -447,7 +447,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                     <div className="relative">
                       <button
                         onClick={() => toggleTask(task.id)}
-                        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-secondary"
+                        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-secondary/40"
                       >
                         {task.completed ? (
                           <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />

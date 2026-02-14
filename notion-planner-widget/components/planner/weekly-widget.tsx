@@ -2,8 +2,21 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { startOfWeek, endOfWeek, addWeeks, subWeeks } from "date-fns";
-import { fetchTasks, createTask, deleteTask, updateTask } from "@/lib/tasks-api";
-import { ChevronLeft, ChevronRight, Plus, X, Sun, Moon, Sunrise } from "lucide-react";
+import {
+  fetchTasks,
+  createTask,
+  deleteTask,
+  updateTask,
+} from "@/lib/tasks-api";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  X,
+  Sun,
+  Moon,
+  Sunrise,
+} from "lucide-react";
 
 import {
   type TimeSlot,
@@ -26,6 +39,36 @@ const SLOT_ICONS = {
   evening: Moon,
 };
 
+type DropPosition = "before" | "after";
+type DragOverState = { id: string; pos: DropPosition } | null;
+
+function getDropPosition(e: React.DragEvent, el: HTMLElement): DropPosition {
+  const rect = el.getBoundingClientRect();
+  const offset = e.clientY - rect.top;
+  return offset < rect.height / 2 ? "before" : "after";
+}
+
+function reorderIds(params: {
+  bucketIds: string[];
+  movingId: string;
+  targetId: string;
+  position: DropPosition;
+}) {
+  const { bucketIds, movingId, targetId, position } = params;
+  const without = bucketIds.filter((id) => id !== movingId);
+  const targetIndex = without.indexOf(targetId);
+  const insertAt =
+    targetIndex === -1
+      ? without.length
+      : position === "before"
+        ? targetIndex
+        : targetIndex + 1;
+
+  const next = without.slice();
+  next.splice(insertAt, 0, movingId);
+  return next;
+}
+
 interface WeeklyWidgetProps {
   data: PlannerData;
   onUpdate: (data: PlannerData) => void;
@@ -33,10 +76,18 @@ interface WeeklyWidgetProps {
 
 export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [editingSlot, setEditingSlot] = useState<{ date: string; slot: TimeSlot } | null>(null);
+  const [editingSlot, setEditingSlot] = useState<{
+    date: string;
+    slot: TimeSlot;
+  } | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<DragOverState>(null);
+
+  const [endHover, setEndHover] = useState<{
+    date: string;
+    slot: TimeSlot;
+  } | null>(null);
 
   const weekDays = getCurrentWeekDays(currentDate);
   const weekLabel = getWeekLabel(currentDate);
@@ -64,7 +115,9 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
     }));
 
     const base = loadData();
-    const outside = base.weeklyTasks.filter((x) => x.date < date_from || x.date > date_to);
+    const outside = base.weeklyTasks.filter(
+      (x) => x.date < date_from || x.date > date_to,
+    );
 
     const byId = new Map<string, (typeof weeklyFromNotion)[number]>();
     weeklyFromNotion.forEach((t) => byId.set(t.id, t));
@@ -101,7 +154,10 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
     const base0 = loadData();
     onUpdate({
       ...base0,
-      weeklyTasks: [...base0.weeklyTasks, { id: tempId, text, timeSlot: slot, date }],
+      weeklyTasks: [
+        ...base0.weeklyTasks,
+        { id: tempId, text, timeSlot: slot, date },
+      ],
     });
 
     setNewTaskText("");
@@ -114,7 +170,9 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
       onUpdate({
         ...base1,
         weeklyTasks: base1.weeklyTasks.map((t) =>
-          t.id === tempId ? { id: created.task.id, text, timeSlot: slot, date } : t,
+          t.id === tempId
+            ? { id: created.task.id, text, timeSlot: slot, date }
+            : t,
         ),
       });
 
@@ -187,7 +245,9 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
               <div
                 key={dateStr}
                 className={`flex min-h-[200px] flex-col rounded-lg border p-3 transition-shadow ${
-                  isToday ? "border-primary/40 bg-primary/5 shadow-sm" : "border-border bg-card"
+                  isToday
+                    ? "border-primary/40 bg-primary/5 shadow-sm"
+                    : "border-border bg-card"
                 }`}
               >
                 <div
@@ -198,177 +258,413 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                   {formatDateShort(day)}
                 </div>
 
-{(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
-  const Icon = SLOT_ICONS[slot];
-  const config = TIME_SLOT_CONFIG[slot];
+                {(["morning", "afternoon", "evening"] as TimeSlot[]).map(
+                  (slot) => {
+                    const Icon = SLOT_ICONS[slot];
+                    const config = TIME_SLOT_CONFIG[slot];
 
-  const tasks = getTasksForDaySlot(dateStr, slot)
-    .slice()
-    .sort(
-      (a: any, b: any) =>
-        (a.order ?? Number.MAX_SAFE_INTEGER) -
-        (b.order ?? Number.MAX_SAFE_INTEGER),
-    );
+                    const tasks = getTasksForDaySlot(dateStr, slot)
+                      .slice()
+                      .sort(
+                        (a: any, b: any) =>
+                          (a.order ?? Number.MAX_SAFE_INTEGER) -
+                          (b.order ?? Number.MAX_SAFE_INTEGER),
+                      );
 
-  const isEditing =
-    editingSlot?.date === dateStr &&
-    editingSlot?.slot === slot;
+                    const isEditing =
+                      editingSlot?.date === dateStr &&
+                      editingSlot?.slot === slot;
 
-  return (
-    <div key={slot} className="mb-2 last:mb-0">
-      <div className="mb-1 flex items-center gap-1">
-        <Icon className={`h-3 w-3 ${config.colorClass}`} />
-        <span className="text-[10px] text-muted-foreground">
-          {config.label}
-        </span>
-      </div>
+                    const handleDropToEnd = async (
+                      e: React.DragEvent,
+                      dateStr0: string,
+                      slot0: TimeSlot,
+                    ) => {
+                      e.preventDefault();
+                      e.stopPropagation();
 
-      <div
-        className="flex flex-col gap-0.5 min-h-[20px]"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={async (e) => {
-          const raw = e.dataTransfer.getData("application/json");
-          if (!raw) return;
+                      setEndHover(null);
 
-          try {
-            const payload = JSON.parse(raw) as {
-              id: string;
-              fromDate: string;
-              fromSlot: TimeSlot;
-            };
+                      if (dragOver) return;
 
-            const baseMove = loadData();
+                      const raw = e.dataTransfer.getData("application/json");
+                      if (!raw) return;
 
-            const bucketBefore = baseMove.weeklyTasks
-              .filter(
-                (t: any) =>
-                  t.date === dateStr && t.timeSlot === slot,
-              )
-              .slice()
-              .sort(
-                (a: any, b: any) =>
-                  (a.order ?? Number.MAX_SAFE_INTEGER) -
-                  (b.order ?? Number.MAX_SAFE_INTEGER),
-              )
-              .map((t: any) => t.id);
+                      try {
+                        const payload = JSON.parse(raw) as {
+                          id: string;
+                          fromDate: string;
+                          fromSlot: TimeSlot;
+                        };
 
-            // 맨 끝에 삽입
-            const bucketAfter = bucketBefore
-              .filter((id) => id !== payload.id)
-              .concat(payload.id);
+                        const baseMove = loadData();
 
-            const nextWeekly = baseMove.weeklyTasks.map((t: any) => {
-              if (!bucketAfter.includes(t.id) && t.id !== payload.id)
-                return t;
+                        const bucketBefore = baseMove.weeklyTasks
+                          .filter(
+                            (t: any) =>
+                              t.date === dateStr0 && t.timeSlot === slot0,
+                          )
+                          .slice()
+                          .sort(
+                            (a: any, b: any) =>
+                              (a.order ?? Number.MAX_SAFE_INTEGER) -
+                              (b.order ?? Number.MAX_SAFE_INTEGER),
+                          )
+                          .map((t: any) => t.id);
 
-              const idx =
-                bucketAfter.indexOf(
-                  t.id === payload.id ? payload.id : t.id,
-                );
+                        const bucketAfter = bucketBefore
+                          .filter((id) => id !== payload.id)
+                          .concat(payload.id);
 
-              if (t.id === payload.id) {
-                return {
-                  ...t,
-                  date: dateStr,
-                  timeSlot: slot,
-                  order: idx,
-                };
-              }
+                        const nextWeekly = baseMove.weeklyTasks.map(
+                          (t: any) => {
+                            if (
+                              !bucketAfter.includes(t.id) &&
+                              t.id !== payload.id
+                            )
+                              return t;
 
-              if (t.date === dateStr && t.timeSlot === slot) {
-                return { ...t, order: idx };
-              }
+                            const idx = bucketAfter.indexOf(
+                              t.id === payload.id ? payload.id : t.id,
+                            );
 
-              return t;
-            });
+                            if (t.id === payload.id) {
+                              return {
+                                ...t,
+                                date: dateStr0,
+                                timeSlot: slot0,
+                                order: idx,
+                              };
+                            }
 
-            onUpdate({ ...baseMove, weeklyTasks: nextWeekly });
+                            if (t.date === dateStr0 && t.timeSlot === slot0) {
+                              return { ...t, order: idx };
+                            }
 
-            for (const u of nextWeekly.filter(
-              (t: any) =>
-                t.date === dateStr && t.timeSlot === slot,
-            )) {
-              await updateTask({
-                id: u.id,
-                date: u.date,
-                timeSlot: u.timeSlot,
-                order: u.order ?? null,
-              });
-            }
+                            return t;
+                          },
+                        );
 
-            publishTasksChanged("weekly");
-            startBurst();
-          } catch {
-            // ignore
-          }
-        }}
-      >
-        {/* 1️⃣ 태스크 먼저 렌더 */}
-        {tasks.map((task) => (
-          <div
-            key={task.id}
-            className="group relative w-full min-w-0"
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(
-                "application/json",
-                JSON.stringify({
-                  id: task.id,
-                  fromDate: dateStr,
-                  fromSlot: slot,
-                }),
-              );
-            }}
-          >
-            <div className="flex min-w-0 items-start gap-1">
-              <span className="flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight text-foreground">
-                {task.text}
-              </span>
+                        onUpdate({ ...baseMove, weeklyTasks: nextWeekly });
 
-              <button
-                onClick={() => removeTask(task.id)}
-                className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </div>
-          </div>
-        ))}
+                        const updates = nextWeekly
+                          .filter(
+                            (t: any) =>
+                              t.date === dateStr0 && t.timeSlot === slot0,
+                          )
+                          .slice()
+                          .sort(
+                            (a: any, b: any) =>
+                              (a.order ?? Number.MAX_SAFE_INTEGER) -
+                              (b.order ?? Number.MAX_SAFE_INTEGER),
+                          );
 
-        {/* 2️⃣ 그 다음 항상 + */}
-        {isEditing ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addTask(dateStr, slot);
-            }}
-            className="flex"
-          >
-            <input
-              autoFocus
-              value={newTaskText}
-              onChange={(e) => setNewTaskText(e.target.value)}
-              onBlur={() => setEditingSlot(null)}
-              placeholder="..."
-              className="w-full bg-transparent text-[11px] text-foreground outline-none"
-            />
-          </form>
-        ) : (
-          <button
-            onClick={() => {
-              setEditingSlot({ date: dateStr, slot });
-              setNewTaskText("");
-            }}
-            className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
-          >
-            <Plus className="h-2.5 w-2.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-})}
+                        for (const u of updates) {
+                          await updateTask({
+                            id: u.id,
+                            date: u.date,
+                            timeSlot: u.timeSlot,
+                            order: u.order ?? null,
+                          });
+                        }
 
+                        setDraggingId(null);
+                        setDragOver(null);
+                        setEndHover(null);
+                        publishTasksChanged("weekly");
+                        startBurst();
+                      } catch {
+                        // ignore
+                      }
+                    };
+
+                    const isEndHover = !!(
+                      draggingId &&
+                      endHover?.date === dateStr &&
+                      endHover?.slot === slot &&
+                      !dragOver
+                    );
+
+                    return (
+                      <div key={slot} className="mb-2 last:mb-0">
+                        <div className="mb-1 flex items-center gap-1">
+                          <Icon className={`h-3 w-3 ${config.colorClass}`} />
+                          <span className="text-[10px] text-muted-foreground">
+                            {config.label}
+                          </span>
+                        </div>
+
+                        <div
+                          className="flex flex-col gap-0.5 min-h-[20px]"
+                          onDragOver={(e) => e.preventDefault()}
+                          onDragLeaveCapture={() => {
+                            setDragOver(null);
+                            setEndHover(null);
+                          }}
+                          onDrop={(e) => handleDropToEnd(e, dateStr, slot)}
+                        >
+                          {tasks.map((task) => {
+                            const showLine =
+                              draggingId &&
+                              draggingId !== task.id &&
+                              dragOver?.id === task.id;
+
+                            return (
+                              <div
+                                key={task.id}
+                                className={`group relative w-full min-w-0 rounded-md transition-colors duration-150
+                                  ${draggingId === task.id ? "bg-secondary/60" : ""}
+                                  ${dragOver?.id === task.id ? "bg-secondary/40" : ""}
+                                  ${!draggingId ? "hover:bg-secondary/40" : ""}
+                                `}
+                                draggable
+                                onDragStart={(e) => {
+                                  setDraggingId(task.id);
+                                  e.dataTransfer.setData(
+                                    "application/json",
+                                    JSON.stringify({
+                                      id: task.id,
+                                      fromDate: dateStr,
+                                      fromSlot: slot,
+                                    }),
+                                  );
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingId(null);
+                                  setDragOver(null);
+                                  setEndHover(null);
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  if (!draggingId || draggingId === task.id)
+                                    return;
+                                  setEndHover(null);
+                                  setDragOver({
+                                    id: task.id,
+                                    pos: getDropPosition(e, e.currentTarget),
+                                  });
+                                }}
+                                onDragLeave={() => {
+                                  setDragOver((prev) =>
+                                    prev?.id === task.id ? null : prev,
+                                  );
+                                }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+
+                                  const raw =
+                                    e.dataTransfer.getData("application/json");
+                                  if (!raw) return;
+
+                                  try {
+                                    const payload = JSON.parse(raw) as {
+                                      id: string;
+                                      fromDate: string;
+                                      fromSlot: TimeSlot;
+                                    };
+
+                                    const baseMove = loadData();
+
+                                    const bucketBefore = baseMove.weeklyTasks
+                                      .filter(
+                                        (t: any) =>
+                                          t.date === dateStr &&
+                                          t.timeSlot === slot,
+                                      )
+                                      .slice()
+                                      .sort(
+                                        (a: any, b: any) =>
+                                          (a.order ?? Number.MAX_SAFE_INTEGER) -
+                                          (b.order ?? Number.MAX_SAFE_INTEGER),
+                                      )
+                                      .map((t: any) => t.id);
+
+                                    const position: DropPosition =
+                                      dragOver?.id === task.id
+                                        ? dragOver.pos
+                                        : "after";
+
+                                    const bucketAfter = reorderIds({
+                                      bucketIds: bucketBefore,
+                                      movingId: payload.id,
+                                      targetId: task.id,
+                                      position,
+                                    });
+
+                                    const nextWeekly = baseMove.weeklyTasks.map(
+                                      (t: any) => {
+                                        if (
+                                          !bucketAfter.includes(t.id) &&
+                                          t.id !== payload.id
+                                        )
+                                          return t;
+
+                                        const idx = bucketAfter.indexOf(
+                                          t.id === payload.id
+                                            ? payload.id
+                                            : t.id,
+                                        );
+
+                                        if (t.id === payload.id) {
+                                          return {
+                                            ...t,
+                                            date: dateStr,
+                                            timeSlot: slot,
+                                            order: idx,
+                                          };
+                                        }
+
+                                        if (
+                                          t.date === dateStr &&
+                                          t.timeSlot === slot
+                                        ) {
+                                          return { ...t, order: idx };
+                                        }
+
+                                        return t;
+                                      },
+                                    );
+
+                                    onUpdate({
+                                      ...baseMove,
+                                      weeklyTasks: nextWeekly,
+                                    });
+
+                                    const updates = nextWeekly
+                                      .filter((t: any) =>
+                                        bucketAfter.includes(t.id),
+                                      )
+                                      .slice()
+                                      .sort(
+                                        (a: any, b: any) =>
+                                          (a.order ?? Number.MAX_SAFE_INTEGER) -
+                                          (b.order ?? Number.MAX_SAFE_INTEGER),
+                                      );
+
+                                    for (const u of updates) {
+                                      await updateTask({
+                                        id: u.id,
+                                        date: u.date,
+                                        timeSlot: u.timeSlot,
+                                        order: u.order ?? null,
+                                      });
+                                    }
+
+                                    setDraggingId(null);
+                                    setDragOver(null);
+                                    setEndHover(null);
+                                    publishTasksChanged("weekly");
+                                    startBurst();
+                                  } catch {
+                                    // ignore
+                                  }
+                                }}
+                              >
+                                {showLine && (
+                                  <div
+                                    className={`pointer-events-none absolute left-0 right-0 h-px bg-primary ${
+                                      dragOver?.pos === "before"
+                                        ? "top-0"
+                                        : "bottom-0"
+                                    }`}
+                                  />
+                                )}
+
+                                <div className="flex min-w-0 items-start gap-1">
+                                  <span
+                                    className={`flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight ${
+                                      (task as any).completed
+                                        ? "text-muted-foreground line-through"
+                                        : "text-foreground"
+                                    }`}
+                                  >
+                                    {task.text}
+                                  </span>
+
+                                  <button
+                                    onClick={() => removeTask(task.id)}
+                                    className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                                    aria-label={`Remove task: ${task.text}`}
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {isEditing ? (
+                            <div
+                              className={`relative rounded-md ${isEndHover ? "bg-primary/5" : ""}`}
+                              onDragEnter={() =>
+                                setEndHover({ date: dateStr, slot })
+                              }
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (!draggingId) return;
+                                setEndHover({ date: dateStr, slot });
+                              }}
+                              onDragLeave={() => setEndHover(null)}
+                              onDrop={(e) => handleDropToEnd(e, dateStr, slot)}
+                            >
+                              {isEndHover && (
+                                <div className="pointer-events-none absolute left-0 right-0 top-0 h-px bg-primary" />
+                              )}
+
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  addTask(dateStr, slot);
+                                }}
+                                className="flex"
+                              >
+                                <input
+                                  autoFocus
+                                  value={newTaskText}
+                                  onChange={(e) =>
+                                    setNewTaskText(e.target.value)
+                                  }
+                                  onBlur={() => setEditingSlot(null)}
+                                  placeholder="..."
+                                  className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
+                                />
+                              </form>
+                            </div>
+                          ) : (
+                            <div
+                              className={`relative rounded-md ${isEndHover ? "bg-primary/5" : ""}`}
+                              onDragEnter={() =>
+                                setEndHover({ date: dateStr, slot })
+                              }
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (!draggingId) return;
+                                setEndHover({ date: dateStr, slot });
+                              }}
+                              onDragLeave={() => setEndHover(null)}
+                              onDrop={(e) => handleDropToEnd(e, dateStr, slot)}
+                            >
+                              {isEndHover && (
+                                <div className="pointer-events-none absolute left-0 right-0 top-0 h-px bg-primary" />
+                              )}
+
+                              <button
+                                onClick={() => {
+                                  setEditingSlot({ date: dateStr, slot });
+                                  setNewTaskText("");
+                                }}
+                                className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+                              >
+                                <Plus className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  },
+                )}
               </div>
             );
           })}
