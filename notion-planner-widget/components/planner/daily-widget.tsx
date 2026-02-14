@@ -52,7 +52,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
   const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
-  // 오늘 tasks를 노션에서 다시 불러와 dailyTasks 캐시 갱신
   const refreshDaily = useCallback(async () => {
     const res = await fetchTasks({ date_from: dateStr, date_to: dateStr });
 
@@ -62,6 +61,8 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       timeSlot: t.timeSlot,
       completed: !!t.completed,
       date: t.date,
+
+      order: typeof t.order === "number" ? t.order : null,
     }));
 
     const base = loadData();
@@ -86,7 +87,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
     refreshDaily().catch(console.error);
   }, [refreshDaily]);
 
-  // ✅ 다른 위젯(iframe)에서 변경이 일어나면 즉시 갱신
   useEffect(() => {
     return subscribeTasksChanged(() => {
       refreshDaily().catch(console.error);
@@ -99,7 +99,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
     const nextCompleted = !prev.completed;
 
-    // optimistic
     onUpdate({
       ...data,
       dailyTasks: data.dailyTasks.map((t) =>
@@ -109,11 +108,9 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
     try {
       await toggleTaskApi(taskId, nextCompleted);
-
       publishTasksChanged("daily");
       startBurst();
     } catch (e) {
-      // rollback
       onUpdate({
         ...data,
         dailyTasks: data.dailyTasks.map((t) =>
@@ -133,7 +130,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
     try {
       await deleteTaskApi(taskId);
-
       publishTasksChanged("daily");
       startBurst();
     } catch (e) {
@@ -158,12 +154,14 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
+
           <span className="min-w-[100px] text-center text-sm font-medium text-muted-foreground">
             {format(currentDate, "M/d (EEE)", { locale: ko })}
             {isToday && (
               <span className="ml-1 text-xs text-primary">today</span>
             )}
           </span>
+
           <button
             onClick={() => setCurrentDate((d) => addDays(d, 1))}
             className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -194,7 +192,14 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
       {(["morning", "afternoon", "evening"] as TimeSlot[]).map((slot) => {
         const Icon = SLOT_ICONS[slot];
         const config = TIME_SLOT_CONFIG[slot];
-        const slotTasks = allTasks.filter((t) => t.timeSlot === slot);
+        const slotTasks = allTasks
+          .filter((t) => t.timeSlot === slot)
+          .slice()
+          .sort(
+            (a: any, b: any) =>
+              (a.order ?? Number.MAX_SAFE_INTEGER) -
+              (b.order ?? Number.MAX_SAFE_INTEGER),
+          );
 
         if (slotTasks.length === 0) return null;
 
@@ -206,27 +211,55 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                 {config.label}
               </span>
             </div>
+
             <div
               className="flex flex-col gap-1"
               onDragOver={(e) => e.preventDefault()}
-              onDragLeave={() => {
-                setDragOverId(null);
-              }}
+              onDragLeave={() => setDragOverId(null)}
               onDrop={async (e) => {
                 const raw = e.dataTransfer.getData("application/json");
                 if (!raw) return;
+
                 try {
                   const payload = JSON.parse(raw) as {
                     id: string;
                     fromSlot: TimeSlot;
                   };
+
                   const baseMove = loadData();
-                  const nextList = baseMove.dailyTasks.map((t) =>
-                    t.id === payload.id ? { ...t, timeSlot: slot } : t,
+                  const before = baseMove.dailyTasks
+                    .filter(
+                      (t: any) => t.date === dateStr && t.timeSlot === slot,
+                    )
+                    .slice()
+                    .sort(
+                      (a: any, b: any) =>
+                        (a.order ?? Number.MAX_SAFE_INTEGER) -
+                        (b.order ?? Number.MAX_SAFE_INTEGER),
+                    );
+
+                  const nextList = baseMove.dailyTasks.map((t: any) =>
+                    t.id === payload.id
+                      ? {
+                          ...t,
+                          date: dateStr,
+                          timeSlot: slot,
+                          order:
+                            payload.fromSlot === slot
+                              ? (t.order ?? null)
+                              : before.length,
+                        }
+                      : t,
                   );
+
                   onUpdate({ ...baseMove, dailyTasks: nextList });
+
                   try {
-                    await updateTask({ id: payload.id, timeSlot: slot });
+                    await updateTask({
+                      id: payload.id,
+                      timeSlot: slot,
+                      order: payload.fromSlot === slot ? null : before.length,
+                    });
                     setDraggingId(null);
                     setDragOverId(null);
                     publishTasksChanged("daily");
@@ -242,6 +275,13 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
               {slotTasks.map((task) => (
                 <div
                   key={task.id}
+                  className={`group relative w-full min-w-0 ${
+                    draggingId === task.id ? "rounded-md bg-secondary/60" : ""
+                  } ${
+                    dragOverId === task.id
+                      ? "rounded-md ring-1 ring-primary/30"
+                      : ""
+                  }`}
                   draggable
                   onDragStart={(e) => {
                     setDraggingId(task.id);
@@ -256,40 +296,133 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                   }}
                   onDragEnter={() => setDragOverId(task.id)}
                   onDragLeave={() => setDragOverId(null)}
-                  className={`group flex items-start gap-1 ${
-                    draggingId === task.id ? "rounded-md bg-secondary/60" : ""
-                  } ${
-                    dragOverId === task.id
-                      ? "rounded-md ring-1 ring-primary/30"
-                      : ""
-                  }`}
                 >
-                  <button
-                    onClick={() => toggleTask(task.id)}
-                    className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
-                  >
-                    {task.completed ? (
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-                    ) : (
-                      <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                    )}
-                    <span
-                      className={`text-sm leading-tight ${
-                        task.completed
-                          ? "text-muted-foreground line-through"
-                          : "text-foreground"
-                      }`}
+                  <div className="flex min-w-0 items-start gap-1">
+                    <button
+                      onClick={() => toggleTask(task.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
                     >
-                      {task.text}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => removeDailyTask(task.id)}
-                    className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
-                    aria-label={`Remove task: ${task.text}`}
-                  >
-                    ×
-                  </button>
+                      {task.completed ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
+                      ) : (
+                        <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                      )}
+
+                      <span
+                        className={`min-w-0 flex-1 whitespace-normal text-sm leading-tight ${
+                          task.completed
+                            ? "text-muted-foreground line-through"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {task.text}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => removeDailyTask(task.id)}
+                      className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                      aria-label={`Remove task: ${task.text}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      const raw = e.dataTransfer.getData("application/json");
+                      if (!raw) return;
+
+                      try {
+                        const payload = JSON.parse(raw) as {
+                          id: string;
+                          fromSlot: TimeSlot;
+                        };
+
+                        const baseMove = loadData();
+
+                        const bucketBefore = baseMove.dailyTasks
+                          .filter(
+                            (t: any) =>
+                              t.date === dateStr && t.timeSlot === slot,
+                          )
+                          .slice()
+                          .sort(
+                            (a: any, b: any) =>
+                              (a.order ?? Number.MAX_SAFE_INTEGER) -
+                              (b.order ?? Number.MAX_SAFE_INTEGER),
+                          )
+                          .map((t: any) => t.id);
+
+                        const destIndex = bucketBefore.indexOf(task.id);
+                        const bucketAfter = bucketBefore
+                          .filter((id) => id !== payload.id)
+                          .slice();
+
+                        bucketAfter.splice(
+                          destIndex === -1 ? bucketAfter.length : destIndex,
+                          0,
+                          payload.id,
+                        );
+
+                        const nextDaily = baseMove.dailyTasks.map((t: any) => {
+                          if (bucketAfter.includes(t.id)) {
+                            const idx = bucketAfter.indexOf(t.id);
+                            const isTarget = t.id === payload.id;
+
+                            if (isTarget) {
+                              return {
+                                ...t,
+                                date: dateStr,
+                                timeSlot: slot,
+                                order: idx,
+                              };
+                            }
+
+                            if (t.date === dateStr && t.timeSlot === slot) {
+                              return {
+                                ...t,
+                                order: idx,
+                              };
+                            }
+                          }
+                          return t;
+                        });
+
+                        onUpdate({ ...baseMove, dailyTasks: nextDaily });
+
+                        try {
+                          const updates = nextDaily
+                            .filter((t: any) => bucketAfter.includes(t.id))
+                            .slice()
+                            .sort(
+                              (a: any, b: any) =>
+                                (a.order ?? Number.MAX_SAFE_INTEGER) -
+                                (b.order ?? Number.MAX_SAFE_INTEGER),
+                            );
+
+                          for (const u of updates) {
+                            await updateTask({
+                              id: u.id,
+                              timeSlot: u.timeSlot,
+                              order: u.order ?? null,
+                            });
+                          }
+
+                          setDraggingId(null);
+                          setDragOverId(null);
+                          publishTasksChanged("daily");
+                          startBurst();
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="mt-0.5 h-0.5 w-full"
+                  />
                 </div>
               ))}
             </div>

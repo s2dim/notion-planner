@@ -77,6 +77,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
       timeSlot: t.timeSlot,
       date: t.date,
       completed: !!t.completed,
+      order: typeof t.order === "number" ? t.order : null,
     }));
 
     const base = loadData();
@@ -93,7 +94,6 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
     });
   }, [currentDate, onUpdate]);
 
-  // 포커스 시 갱신 + 편집 후 잠깐 버스트
   const { startBurst } = useSmartRefresh(refreshWeekly, {
     onlyWhenVisible: false,
     idleIntervalMs: 25000,
@@ -106,7 +106,6 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
     refreshWeekly().catch(console.error);
   }, [refreshWeekly]);
 
-  // ✅ 다른 위젯(iframe)에서 변경이 일어나면 즉시 갱신
   useEffect(() => {
     return subscribeTasksChanged(() => {
       refreshWeekly().catch(console.error);
@@ -143,7 +142,6 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
         ),
       });
 
-      // ✅ 다른 iframe들에 "변경됨" 신호 보내기
       publishTasksChanged("weekly");
       startBurst();
     } catch (e) {
@@ -255,6 +253,11 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                           {tasks.map((task) => (
                             <div
                               key={task.id}
+                              className={`group relative w-full min-w-0 ${
+                                draggingId === task.id
+                                  ? "rounded-md bg-secondary/60"
+                                  : ""
+                              } ${dragOverId === task.id ? "rounded-md ring-1 ring-primary/30" : ""}`}
                               draggable
                               onDragStart={(e) => {
                                 setDraggingId(task.id);
@@ -273,63 +276,68 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                               }}
                               onDragEnter={() => setDragOverId(task.id)}
                               onDragLeave={() => setDragOverId(null)}
-                              className={`group relative flex w-full min-w-0 cursor-move items-start gap-1 ${
-                                draggingId === task.id
-                                  ? "rounded-md bg-secondary/60"
-                                  : ""
-                              } ${
-                                dragOverId === task.id
-                                  ? "rounded-md ring-1 ring-primary/30"
-                                  : ""
-                              }`}
                             >
-                              <span
-                                className={`flex-1 min-w-0 break-keep whitespace-normal pr-4 text-[11px] leading-tight ${
-                                  (task as any).completed
-                                    ? "text-muted-foreground line-through"
-                                    : "text-foreground"
-                                }`}
-                              >
-                                {task.text}
-                              </span>
-                              <button
-                                onClick={() => removeTask(task.id)}
-                                className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
-                                aria-label={`Remove task: ${task.text}`}
-                              >
-                                <X className="h-2.5 w-2.5" />
-                              </button>
+                              {/* ✅ 1) 가로 row: 텍스트 + 삭제 버튼 */}
+                              <div className="flex min-w-0 items-start gap-1">
+                                <span
+                                  className={`flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight ${
+                                    (task as any).completed
+                                      ? "text-muted-foreground line-through"
+                                      : "text-foreground"
+                                  }`}
+                                >
+                                  {task.text}
+                                </span>
+
+                                <button
+                                  onClick={() => removeTask(task.id)}
+                                  className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                                  aria-label={`Remove task: ${task.text}`}
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </div>
+
+                              {/* ✅ 2) 아래 줄: reorder drop line (w-full OK) */}
                               <div
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={async (e) => {
                                   const raw =
                                     e.dataTransfer.getData("application/json");
                                   if (!raw) return;
+
                                   try {
                                     const payload = JSON.parse(raw) as {
                                       id: string;
                                       fromDate: string;
                                       fromSlot: TimeSlot;
                                     };
+
                                     const baseMove = loadData();
+
                                     const bucketBefore = baseMove.weeklyTasks
                                       .filter(
                                         (t: any) =>
                                           t.date === dateStr &&
                                           t.timeSlot === slot,
                                       )
+                                      .slice()
                                       .sort(
                                         (a: any, b: any) =>
                                           (a.order ?? Number.MAX_SAFE_INTEGER) -
                                           (b.order ?? Number.MAX_SAFE_INTEGER),
                                       )
-                                      .map((t) => t.id);
+                                      .map((t: any) => t.id);
+
                                     const destIndex = bucketBefore.indexOf(
                                       task.id,
                                     );
+
+                                    // ✅ 기존 코드의 splice(0) 버그 방지: slice() 사용
                                     const bucketAfter = bucketBefore
                                       .filter((id) => id !== payload.id)
-                                      .splice(0);
+                                      .slice();
+
                                     bucketAfter.splice(
                                       destIndex === -1
                                         ? bucketAfter.length
@@ -337,8 +345,10 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                       0,
                                       payload.id,
                                     );
+
                                     const nextWeekly = baseMove.weeklyTasks.map(
                                       (t: any) => {
+                                        // 드롭 대상 버킷에 속하는 애들은 order 재부여 + date/slot 맞춰주기
                                         if (bucketAfter.includes(t.id)) {
                                           const idx = bucketAfter.indexOf(t.id);
                                           return {
@@ -348,30 +358,23 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                             order: idx,
                                           };
                                         }
-                                        if (t.id === payload.id) {
-                                          return {
-                                            ...t,
-                                            date: dateStr,
-                                            timeSlot: slot,
-                                            order:
-                                              bucketAfter.indexOf(t.id) === -1
-                                                ? bucketAfter.length - 1
-                                                : bucketAfter.indexOf(t.id),
-                                          };
-                                        }
+                                        // 다른 버킷에 있는 애들은 그대로
                                         return t;
                                       },
                                     );
+
                                     onUpdate({
                                       ...baseMove,
                                       weeklyTasks: nextWeekly,
                                     });
+
                                     try {
                                       const updates = nextWeekly.filter(
                                         (t: any) =>
                                           t.date === dateStr &&
                                           t.timeSlot === slot,
                                       );
+
                                       for (const u of updates) {
                                         await updateTask({
                                           id: u.id,
@@ -380,6 +383,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                           order: u.order ?? null,
                                         });
                                       }
+
                                       setDraggingId(null);
                                       setDragOverId(null);
                                       publishTasksChanged("weekly");
@@ -387,9 +391,11 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                     } catch (err) {
                                       console.error(err);
                                     }
-                                  } catch {}
+                                  } catch {
+                                    // ignore
+                                  }
                                 }}
-                                className="h-0.5 w-full"
+                                className="mt-0.5 h-0.5 w-full"
                               />
                             </div>
                           ))}
