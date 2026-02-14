@@ -2,7 +2,12 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { startOfWeek, endOfWeek, addWeeks, subWeeks } from "date-fns";
-import { fetchTasks, createTask, deleteTask } from "@/lib/tasks-api";
+import {
+  fetchTasks,
+  createTask,
+  deleteTask,
+  updateTask,
+} from "@/lib/tasks-api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -46,6 +51,8 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
     slot: TimeSlot;
   } | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const weekDays = getCurrentWeekDays(currentDate);
   const weekLabel = getWeekLabel(currentDate);
@@ -69,6 +76,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
       text: t.text,
       timeSlot: t.timeSlot,
       date: t.date,
+      completed: !!t.completed,
     }));
 
     const base = loadData();
@@ -196,102 +204,281 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
-        {weekDays.map((day) => {
-          const dateStr = formatDate(day);
-          const isToday = formatDate(new Date()) === dateStr;
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[880px] grid-cols-7 gap-2">
+          {weekDays.map((day) => {
+            const dateStr = formatDate(day);
+            const isToday = formatDate(new Date()) === dateStr;
 
-          return (
-            <div
-              key={dateStr}
-              className={`flex min-h-[200px] flex-col rounded-lg border p-3 transition-shadow ${
-                isToday
-                  ? "border-primary/40 bg-primary/5 shadow-sm"
-                  : "border-border bg-card"
-              }`}
-            >
+            return (
               <div
-                className={`mb-3 text-center text-xs font-semibold ${
-                  isToday ? "text-primary" : "text-muted-foreground"
+                key={dateStr}
+                className={`flex min-h-[200px] flex-col rounded-lg border p-3 transition-shadow ${
+                  isToday
+                    ? "border-primary/40 bg-primary/5 shadow-sm"
+                    : "border-border bg-card"
                 }`}
               >
-                {formatDateShort(day)}
-              </div>
+                <div
+                  className={`mb-3 text-center text-xs font-semibold ${
+                    isToday ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  {formatDateShort(day)}
+                </div>
 
-              {(["morning", "afternoon", "evening"] as TimeSlot[]).map(
-                (slot) => {
-                  const Icon = SLOT_ICONS[slot];
-                  const config = TIME_SLOT_CONFIG[slot];
-                  const tasks = getTasksForDaySlot(dateStr, slot);
-                  const isEditing =
-                    editingSlot?.date === dateStr && editingSlot?.slot === slot;
+                {(["morning", "afternoon", "evening"] as TimeSlot[]).map(
+                  (slot) => {
+                    const Icon = SLOT_ICONS[slot];
+                    const config = TIME_SLOT_CONFIG[slot];
+                    const tasks = getTasksForDaySlot(dateStr, slot)
+                      .slice()
+                      .sort(
+                        (a: any, b: any) =>
+                          (a.order ?? Number.MAX_SAFE_INTEGER) -
+                          (b.order ?? Number.MAX_SAFE_INTEGER),
+                      );
+                    const isEditing =
+                      editingSlot?.date === dateStr &&
+                      editingSlot?.slot === slot;
 
-                  return (
-                    <div key={slot} className="mb-2 last:mb-0">
-                      <div className="mb-1 flex items-center gap-1">
-                        <Icon className={`h-3 w-3 ${config.colorClass}`} />
-                        <span className="text-[10px] text-muted-foreground">
-                          {config.label}
-                        </span>
-                      </div>
+                    return (
+                      <div key={slot} className="mb-2 last:mb-0">
+                        <div className="mb-1 flex items-center gap-1">
+                          <Icon className={`h-3 w-3 ${config.colorClass}`} />
+                          <span className="text-[10px] text-muted-foreground">
+                            {config.label}
+                          </span>
+                        </div>
 
-                      <div className="flex flex-col gap-0.5">
-                        {tasks.map((task) => (
-                          <div
-                            key={task.id}
-                            className="group flex items-start gap-1"
-                          >
-                            <span className="flex-1 text-[11px] leading-tight text-foreground">
-                              {task.text}
-                            </span>
-                            <button
-                              onClick={() => removeTask(task.id)}
-                              className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
-                              aria-label={`Remove task: ${task.text}`}
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
-                          </div>
-                        ))}
-
-                        {isEditing ? (
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              addTask(dateStr, slot);
-                            }}
-                            className="flex"
-                          >
-                            <input
-                              autoFocus
-                              value={newTaskText}
-                              onChange={(e) => setNewTaskText(e.target.value)}
-                              onBlur={() => {
-                                setEditingSlot(null);
+                        <div className="flex flex-col gap-0.5">
+                          {tasks.map((task) => (
+                            <div
+                              key={task.id}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggingId(task.id);
+                                e.dataTransfer.setData(
+                                  "application/json",
+                                  JSON.stringify({
+                                    id: task.id,
+                                    fromDate: dateStr,
+                                    fromSlot: slot,
+                                  }),
+                                );
                               }}
-                              placeholder="..."
-                              className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
-                            />
-                          </form>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setEditingSlot({ date: dateStr, slot });
-                              setNewTaskText("");
+                              onDragEnd={() => {
+                                setDraggingId(null);
+                                setDragOverId(null);
+                              }}
+                              onDragEnter={() => setDragOverId(task.id)}
+                              onDragLeave={() => setDragOverId(null)}
+                              className={`group relative flex w-full min-w-0 cursor-move items-start gap-1 ${
+                                draggingId === task.id
+                                  ? "rounded-md bg-secondary/60"
+                                  : ""
+                              } ${
+                                dragOverId === task.id
+                                  ? "rounded-md ring-1 ring-primary/30"
+                                  : ""
+                              }`}
+                            >
+                              <span
+                                className={`flex-1 min-w-0 break-keep whitespace-normal pr-4 text-[11px] leading-tight ${
+                                  (task as any).completed
+                                    ? "text-muted-foreground line-through"
+                                    : "text-foreground"
+                                }`}
+                              >
+                                {task.text}
+                              </span>
+                              <button
+                                onClick={() => removeTask(task.id)}
+                                className="absolute right-0 top-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                                aria-label={`Remove task: ${task.text}`}
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                              <div
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={async (e) => {
+                                  const raw =
+                                    e.dataTransfer.getData("application/json");
+                                  if (!raw) return;
+                                  try {
+                                    const payload = JSON.parse(raw) as {
+                                      id: string;
+                                      fromDate: string;
+                                      fromSlot: TimeSlot;
+                                    };
+                                    const baseMove = loadData();
+                                    const bucketBefore = baseMove.weeklyTasks
+                                      .filter(
+                                        (t: any) =>
+                                          t.date === dateStr &&
+                                          t.timeSlot === slot,
+                                      )
+                                      .sort(
+                                        (a: any, b: any) =>
+                                          (a.order ?? Number.MAX_SAFE_INTEGER) -
+                                          (b.order ?? Number.MAX_SAFE_INTEGER),
+                                      )
+                                      .map((t) => t.id);
+                                    const destIndex = bucketBefore.indexOf(
+                                      task.id,
+                                    );
+                                    const bucketAfter = bucketBefore
+                                      .filter((id) => id !== payload.id)
+                                      .splice(0);
+                                    bucketAfter.splice(
+                                      destIndex === -1
+                                        ? bucketAfter.length
+                                        : destIndex,
+                                      0,
+                                      payload.id,
+                                    );
+                                    const nextWeekly = baseMove.weeklyTasks.map(
+                                      (t: any) => {
+                                        if (bucketAfter.includes(t.id)) {
+                                          const idx = bucketAfter.indexOf(t.id);
+                                          return {
+                                            ...t,
+                                            date: dateStr,
+                                            timeSlot: slot,
+                                            order: idx,
+                                          };
+                                        }
+                                        if (t.id === payload.id) {
+                                          return {
+                                            ...t,
+                                            date: dateStr,
+                                            timeSlot: slot,
+                                            order:
+                                              bucketAfter.indexOf(t.id) === -1
+                                                ? bucketAfter.length - 1
+                                                : bucketAfter.indexOf(t.id),
+                                          };
+                                        }
+                                        return t;
+                                      },
+                                    );
+                                    onUpdate({
+                                      ...baseMove,
+                                      weeklyTasks: nextWeekly,
+                                    });
+                                    try {
+                                      const updates = nextWeekly.filter(
+                                        (t: any) =>
+                                          t.date === dateStr &&
+                                          t.timeSlot === slot,
+                                      );
+                                      for (const u of updates) {
+                                        await updateTask({
+                                          id: u.id,
+                                          date: u.date,
+                                          timeSlot: u.timeSlot,
+                                          order: u.order ?? null,
+                                        });
+                                      }
+                                      setDraggingId(null);
+                                      setDragOverId(null);
+                                      publishTasksChanged("weekly");
+                                      startBurst();
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  } catch {}
+                                }}
+                                className="h-0.5 w-full"
+                              />
+                            </div>
+                          ))}
+
+                          {isEditing ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                addTask(dateStr, slot);
+                              }}
+                              className="flex"
+                            >
+                              <input
+                                autoFocus
+                                value={newTaskText}
+                                onChange={(e) => setNewTaskText(e.target.value)}
+                                onBlur={() => {
+                                  setEditingSlot(null);
+                                }}
+                                placeholder="..."
+                                className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
+                              />
+                            </form>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingSlot({ date: dateStr, slot });
+                                setNewTaskText("");
+                              }}
+                              className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
+                            >
+                              <Plus className="h-2.5 w-2.5" />
+                            </button>
+                          )}
+                          <div
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={async (e) => {
+                              const raw =
+                                e.dataTransfer.getData("application/json");
+                              if (!raw) return;
+                              try {
+                                const payload = JSON.parse(raw) as {
+                                  id: string;
+                                  fromDate: string;
+                                  fromSlot: TimeSlot;
+                                };
+                                const isSameBucket =
+                                  payload.fromDate === dateStr &&
+                                  payload.fromSlot === slot;
+                                const baseMove = loadData();
+                                const nextList = baseMove.weeklyTasks.map(
+                                  (t) =>
+                                    t.id === payload.id
+                                      ? { ...t, date: dateStr, timeSlot: slot }
+                                      : t,
+                                );
+                                onUpdate({
+                                  ...baseMove,
+                                  weeklyTasks: nextList,
+                                });
+                                try {
+                                  await updateTask({
+                                    id: payload.id,
+                                    date: dateStr,
+                                    timeSlot: slot,
+                                    order: isSameBucket
+                                      ? null
+                                      : tasks.length || 0,
+                                  });
+                                  publishTasksChanged("weekly");
+                                  startBurst();
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              } catch {
+                                // ignore
+                              }
                             }}
-                            className="flex items-center gap-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground"
-                          >
-                            <Plus className="h-2.5 w-2.5" />
-                          </button>
-                        )}
+                            className="h-6"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          );
-        })}
+                    );
+                  },
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -49,6 +49,7 @@ export async function GET(req: Request) {
     sorts: [
       { property: "Date", direction: "ascending" },
       { property: "Slot", direction: "ascending" },
+      { property: "Order", direction: "ascending" },
     ],
   });
 
@@ -60,6 +61,7 @@ export async function GET(req: Request) {
       date: props.Date?.date?.start ?? "",
       timeSlot: (props.Slot?.select?.name ?? "morning") as Slot,
       completed: !!props.Done?.checkbox,
+      order: props.Order?.number ?? null,
     };
   });
 

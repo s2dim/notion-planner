@@ -14,6 +14,7 @@ import {
   toggleHabitLog,
   createHabit,
   updateHabitActive,
+  updateHabitOrder,
 } from "@/lib/habits-api";
 import { useSmartRefresh } from "@/lib/useSmartRefresh";
 import { subscribeTasksChanged, publishTasksChanged } from "@/lib/planner-bus";
@@ -23,21 +24,39 @@ interface HabitTrackerWidgetProps {
   onUpdate: (data: PlannerData) => void;
 }
 
-type HabitItem = { id: string; name: string; active: boolean; order: number | null };
+type HabitItem = {
+  id: string;
+  name: string;
+  active: boolean;
+  order: number | null;
+};
 
-export function HabitTrackerWidget({ data, onUpdate }: HabitTrackerWidgetProps) {
+export function HabitTrackerWidget({
+  data,
+  onUpdate,
+}: HabitTrackerWidgetProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newHabitName, setNewHabitName] = useState("");
   const [habits, setHabits] = useState<HabitItem[]>([]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
+  const weekStart = useMemo(
+    () => startOfWeek(new Date(), { weekStartsOn: 1 }),
+    [],
+  );
   const weekEnd = useMemo(() => endOfWeek(new Date(), { weekStartsOn: 1 }), []);
   const weekDates = useMemo(
-    () => eachDayOfInterval({ start: weekStart, end: weekEnd }).slice(0, 7).map((d) => formatDate(d)),
+    () =>
+      eachDayOfInterval({ start: weekStart, end: weekEnd })
+        .slice(0, 7)
+        .map((d) => formatDate(d)),
     [weekStart, weekEnd],
   );
 
-  const [weekLogs, setWeekLogs] = useState<Record<string, Record<string, boolean>>>({});
+  const [weekLogs, setWeekLogs] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
 
   const refreshHabits = useCallback(async () => {
     const h = await fetchHabits();
@@ -138,7 +157,10 @@ export function HabitTrackerWidget({ data, onUpdate }: HabitTrackerWidgetProps) 
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold text-foreground">Habit Tracker</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-foreground">Habit Tracker</h2>
+        <div className="h-4" />
+      </div>
 
       {habits.length > 0 && (
         <div className="overflow-x-auto">
@@ -162,10 +184,78 @@ export function HabitTrackerWidget({ data, onUpdate }: HabitTrackerWidgetProps) 
               </tr>
             </thead>
             <tbody>
-              {habits.map((habit) => (
-                <tr key={habit.id} className="group">
+              {habits
+                .slice()
+                .sort(
+                  (a, b) =>
+                    (a.order ?? Number.MAX_SAFE_INTEGER) -
+                    (b.order ?? Number.MAX_SAFE_INTEGER),
+                )
+                .map((habit) => (
+                <tr
+                  key={habit.id}
+                  className={`group ${
+                    draggingId === habit.id ? "bg-secondary/60" : ""
+                  } ${
+                    dragOverId === habit.id ? "ring-1 ring-primary/30" : ""
+                  }`}
+                  onDragEnter={() => setDragOverId(habit.id)}
+                  onDragLeave={() => setDragOverId(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={async (e) => {
+                    const raw = e.dataTransfer.getData("application/json");
+                    if (!raw) return;
+                    try {
+                      const payload = JSON.parse(raw) as { id: string };
+                      const before = habits
+                        .slice()
+                        .sort(
+                          (a, b) =>
+                            (a.order ?? Number.MAX_SAFE_INTEGER) -
+                            (b.order ?? Number.MAX_SAFE_INTEGER),
+                        );
+                      const fromIdx = before.findIndex((h) => h.id === payload.id);
+                      const toIdx = before.findIndex((h) => h.id === habit.id);
+                      if (fromIdx === -1 || toIdx === -1) return;
+                      const next = before.slice();
+                      const [moved] = next.splice(fromIdx, 1);
+                      next.splice(toIdx, 0, moved);
+                      const nextWithOrder = next.map((h, idx) => ({
+                        ...h,
+                        order: idx,
+                      }));
+                      setHabits(nextWithOrder);
+                      try {
+                        for (const h of nextWithOrder) {
+                          await updateHabitOrder(h.id, h.order ?? null);
+                        }
+                        setDraggingId(null);
+                        setDragOverId(null);
+                        publishTasksChanged("habit");
+                        startBurst();
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    } catch {}
+                  }}
+                >
                   <td className="relative w-[180px] py-1 pr-3">
-                    <div className="flex items-center gap-1">
+                    <div
+                      className="flex cursor-move items-center gap-1"
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggingId(habit.id);
+                        e.dataTransfer.setData(
+                          "application/json",
+                          JSON.stringify({ id: habit.id }),
+                        );
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggingId(null);
+                        setDragOverId(null);
+                      }}
+                    >
                       <span className="text-sm text-foreground">
                         {habit.name}
                       </span>
@@ -211,6 +301,49 @@ export function HabitTrackerWidget({ data, onUpdate }: HabitTrackerWidgetProps) 
                   </td>
                 </tr>
               ))}
+              <tr>
+                <td colSpan={9}>
+                  <div
+                    className="h-6 w-full"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      const raw = e.dataTransfer.getData("application/json");
+                      if (!raw) return;
+                      try {
+                        const payload = JSON.parse(raw) as { id: string };
+                        const before = habits
+                          .slice()
+                          .sort(
+                            (a, b) =>
+                              (a.order ?? Number.MAX_SAFE_INTEGER) -
+                              (b.order ?? Number.MAX_SAFE_INTEGER),
+                          );
+                        const fromIdx = before.findIndex((h) => h.id === payload.id);
+                        if (fromIdx === -1) return;
+                        const next = before.slice();
+                        const [moved] = next.splice(fromIdx, 1);
+                        next.push(moved);
+                        const nextWithOrder = next.map((h, idx) => ({
+                          ...h,
+                          order: idx,
+                        }));
+                        setHabits(nextWithOrder);
+                        try {
+                          for (const h of nextWithOrder) {
+                            await updateHabitOrder(h.id, h.order ?? null);
+                          }
+                          setDraggingId(null);
+                          setDragOverId(null);
+                          publishTasksChanged("habit");
+                          startBurst();
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      } catch {}
+                    }}
+                  />
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

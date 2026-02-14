@@ -17,6 +17,7 @@ import {
   fetchTasks,
   toggleTask as toggleTaskApi,
   deleteTask as deleteTaskApi,
+  updateTask,
 } from "@/lib/tasks-api";
 
 import {
@@ -46,6 +47,8 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
   const isToday = formatDate(new Date()) === dateStr;
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
@@ -203,9 +206,59 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                 {config.label}
               </span>
             </div>
-            <div className="flex flex-col gap-1">
+            <div
+              className="flex flex-col gap-1"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={async (e) => {
+                const raw = e.dataTransfer.getData("application/json");
+                if (!raw) return;
+                try {
+                  const payload = JSON.parse(raw) as {
+                    id: string;
+                    fromSlot: TimeSlot;
+                  };
+                  const baseMove = loadData();
+                  const nextList = baseMove.dailyTasks.map((t) =>
+                    t.id === payload.id ? { ...t, timeSlot: slot } : t,
+                  );
+                  onUpdate({ ...baseMove, dailyTasks: nextList });
+                  try {
+                    await updateTask({ id: payload.id, timeSlot: slot });
+                    publishTasksChanged("daily");
+                    startBurst();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                } catch {
+                  // ignore
+                }
+              }}
+            >
               {slotTasks.map((task) => (
-                <div key={task.id} className="group flex items-start gap-1">
+                <div
+                  key={task.id}
+                  draggable
+                  onDragStart={(e) => {
+                    setDraggingId(task.id);
+                    e.dataTransfer.setData(
+                      "application/json",
+                      JSON.stringify({ id: task.id, fromSlot: slot }),
+                    );
+                  }}
+                  onDragEnd={() => {
+                    setDraggingId(null);
+                    setDragOverId(null);
+                  }}
+                  onDragEnter={() => setDragOverId(task.id)}
+                  onDragLeave={() => setDragOverId(null)}
+                  className={`group flex items-start gap-1 ${
+                    draggingId === task.id ? "rounded-md bg-secondary/60" : ""
+                  } ${
+                    dragOverId === task.id
+                      ? "rounded-md ring-1 ring-primary/30"
+                      : ""
+                  }`}
+                >
                   <button
                     onClick={() => toggleTask(task.id)}
                     className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-secondary"
@@ -225,7 +278,6 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                       {task.text}
                     </span>
                   </button>
-
                   <button
                     onClick={() => removeDailyTask(task.id)}
                     className="mt-0.5 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"

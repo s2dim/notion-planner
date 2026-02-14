@@ -17,6 +17,7 @@ export async function fetchTasks(params: {
       date: string;
       timeSlot: Slot;
       completed: boolean;
+      order: number | null;
     }>;
   };
 }
@@ -47,4 +48,19 @@ export async function toggleTask(id: string, completed: boolean) {
 export async function deleteTask(id: string) {
   const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete task");
+}
+
+export async function updateTask(input: {
+  id: string;
+  date?: string;
+  timeSlot?: Slot;
+  order?: number | null;
+}) {
+  const { id, ...rest } = input;
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rest),
+  });
+  if (!res.ok) throw new Error("Failed to update task");
 }
