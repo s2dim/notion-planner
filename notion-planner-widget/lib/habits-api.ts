@@ -42,6 +42,15 @@ export async function updateHabitOrder(id: string, order: number | null) {
   if (!res.ok) throw new Error("Failed to update habit order");
 }
 
+export async function updateHabitName(id: string, name: string) {
+  const res = await fetch(`/api/habits/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Failed to update habit name");
+}
+
 export async function fetchHabitLogs(params: {
   date_from: string;
   date_to: string;

@@ -12,6 +12,7 @@ export async function PATCH(
     date?: string;
     timeSlot?: Slot;
     order?: number | null;
+    text?: string;
   };
 
   const props: any = {};
@@ -24,10 +25,18 @@ export async function PATCH(
   if (typeof body.timeSlot === "string" && body.timeSlot) {
     props.Slot = { select: { name: body.timeSlot } };
   }
+  if (typeof body.text === "string") {
+    const name = body.text.trim();
+    if (name) {
+      props.Name = { title: [{ text: { content: name } }] };
+    }
+  }
 
   if (body.order !== undefined) {
     try {
-      const db = await notion.databases.retrieve({ database_id: NOTION_TASKS_DB_ID });
+      const db = await notion.databases.retrieve({
+        database_id: NOTION_TASKS_DB_ID,
+      });
       if ((db as any).properties?.Order?.number !== undefined) {
         props.Order = { number: body.order };
       }

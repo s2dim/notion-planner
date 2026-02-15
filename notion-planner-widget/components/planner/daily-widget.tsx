@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Circle,
 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { addDays, subDays, format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -80,6 +81,7 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<DragOverState>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
   const dailyTasksForDay = data.dailyTasks.filter((t) => t.date === dateStr);
 
@@ -445,26 +447,65 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                     )}
 
                     <div className="relative">
-                      <button
-                        onClick={() => toggleTask(task.id)}
-                        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-secondary/40"
-                      >
-                        {task.completed ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-                        ) : (
-                          <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                        )}
-
-                        <span
-                          className={`min-w-0 flex-1 whitespace-normal text-sm leading-tight ${
-                            task.completed
-                              ? "text-muted-foreground line-through"
-                              : "text-foreground"
-                          }`}
+                      {editing?.id === task.id ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const text = (editing?.text || "").trim();
+                            if (!text) {
+                              setEditing(null);
+                              return;
+                            }
+                            const base = loadData();
+                            onUpdate({
+                              ...base,
+                              dailyTasks: base.dailyTasks.map((t) =>
+                                t.id === task.id ? { ...t, text } : t,
+                              ),
+                            });
+                            (async () => {
+                              try {
+                                await updateTask({ id: task.id, text });
+                                publishTasksChanged("daily");
+                                startBurst();
+                              } catch {}
+                              setEditing(null);
+                            })();
+                          }}
+                          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8"
                         >
-                          {task.text}
-                        </span>
-                      </button>
+                          <input
+                            autoFocus
+                            value={editing.text}
+                            onChange={(e) =>
+                              setEditing({ id: task.id, text: e.target.value })
+                            }
+                            onBlur={() => setEditing(null)}
+                            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none"
+                          />
+                        </form>
+                      ) : (
+                        <button
+                          onClick={() => toggleTask(task.id)}
+                          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-secondary/40"
+                        >
+                          {task.completed ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
+                          ) : (
+                            <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                          )}
+
+                          <span
+                            className={`min-w-0 flex-1 whitespace-normal text-sm leading-tight ${
+                              task.completed
+                                ? "text-muted-foreground line-through"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {task.text}
+                          </span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => removeDailyTask(task.id)}
@@ -473,6 +514,17 @@ export function DailyWidget({ data, onUpdate }: DailyWidgetProps) {
                       >
                         ×
                       </button>
+                      {!editing && (
+                        <button
+                          onClick={() =>
+                            setEditing({ id: task.id, text: task.text || "" })
+                          }
+                          className="absolute right-6 top-1/2 hidden -translate-y-1/2 text-muted-foreground hover:text-foreground group-hover:inline-flex"
+                          aria-label={`Edit task: ${task.text}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

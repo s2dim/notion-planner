@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Sunrise,
+  Pencil,
 } from "lucide-react";
 
 import {
@@ -83,6 +84,7 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
   const [newTaskText, setNewTaskText] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<DragOverState>(null);
+  const [editingTask, setEditingTask] = useState<{ id: string; text: string } | null>(null);
 
   const [endHover, setEndHover] = useState<{
     date: string;
@@ -572,15 +574,54 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                 )}
 
                                 <div className="flex min-w-0 items-start gap-1">
-                                  <span
-                                    className={`flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight ${
-                                      (task as any).completed
-                                        ? "text-muted-foreground line-through"
-                                        : "text-foreground"
-                                    }`}
-                                  >
-                                    {task.text}
-                                  </span>
+                                  {editingTask?.id === task.id ? (
+                                    <form
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const text = (editingTask?.text || "").trim();
+                                        if (!text) {
+                                          setEditingTask(null);
+                                          return;
+                                        }
+                                        const base = loadData();
+                                        onUpdate({
+                                          ...base,
+                                          weeklyTasks: base.weeklyTasks.map((t) =>
+                                            t.id === task.id ? { ...t, text } : t,
+                                          ),
+                                        });
+                                        (async () => {
+                                          try {
+                                            await updateTask({ id: task.id, text });
+                                            publishTasksChanged("weekly");
+                                            startBurst();
+                                          } catch {}
+                                          setEditingTask(null);
+                                        })();
+                                      }}
+                                      className="flex-1 min-w-0 pr-4"
+                                    >
+                                      <input
+                                        autoFocus
+                                        value={editingTask.text}
+                                        onChange={(e) =>
+                                          setEditingTask({ id: task.id, text: e.target.value })
+                                        }
+                                        onBlur={() => setEditingTask(null)}
+                                        className="w-full bg-transparent text-[11px] text-foreground outline-none"
+                                      />
+                                    </form>
+                                  ) : (
+                                    <span
+                                      className={`flex-1 min-w-0 whitespace-normal pr-4 text-[11px] leading-tight ${
+                                        (task as any).completed
+                                          ? "text-muted-foreground line-through"
+                                          : "text-foreground"
+                                      }`}
+                                    >
+                                      {task.text}
+                                    </span>
+                                  )}
 
                                   <button
                                     onClick={() => removeTask(task.id)}
@@ -589,6 +630,17 @@ export function WeeklyWidget({ data, onUpdate }: WeeklyWidgetProps) {
                                   >
                                     <X className="h-2.5 w-2.5" />
                                   </button>
+                                  {!editingTask && (
+                                    <button
+                                      onClick={() =>
+                                        setEditingTask({ id: task.id, text: task.text || "" })
+                                      }
+                                      className="absolute right-5 top-0.5 hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:inline-flex"
+                                      aria-label={`Edit task: ${task.text}`}
+                                    >
+                                      <Pencil className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             );

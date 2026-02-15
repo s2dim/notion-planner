@@ -55,6 +55,7 @@ export async function updateTask(input: {
   date?: string;
   timeSlot?: Slot;
   order?: number | null;
+  text?: string;
 }) {
   const { id, ...rest } = input;
   const res = await fetch(`/api/tasks/${id}`, {

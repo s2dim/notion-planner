@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Plus, X, Check } from "lucide-react";
+import { Plus, X, Check, Pencil } from "lucide-react";
 import { startOfWeek, endOfWeek, eachDayOfInterval } from "date-fns";
 import {
   DAY_NAMES_KR,
@@ -49,6 +49,10 @@ export function HabitTrackerWidget({
   const [habits, setHabits] = useState<HabitItem[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<DragOverState>(null);
+  const [editingHabit, setEditingHabit] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const weekStart = useMemo(
     () => startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -336,9 +340,51 @@ export function HabitTrackerWidget({
                           setDragOver(null);
                         }}
                       >
-                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-foreground">
-                          {habit.name}
-                        </span>
+                        {editingHabit?.id === habit.id ? (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const name = (editingHabit?.name || "").trim();
+                              if (!name) {
+                                setEditingHabit(null);
+                                return;
+                              }
+                              setHabits((prev) =>
+                                prev.map((h) =>
+                                  h.id === habit.id ? { ...h, name } : h,
+                                ),
+                              );
+                              (async () => {
+                                try {
+                                  const { updateHabitName } =
+                                    await import("@/lib/habits-api");
+                                  await updateHabitName(habit.id, name);
+                                  publishTasksChanged("habit");
+                                  startBurst();
+                                } catch {}
+                                setEditingHabit(null);
+                              })();
+                            }}
+                            className="min-w-0 flex-1 pr-6"
+                          >
+                            <input
+                              autoFocus
+                              value={editingHabit.name}
+                              onChange={(e) =>
+                                setEditingHabit({
+                                  id: habit.id,
+                                  name: e.target.value,
+                                })
+                              }
+                              onBlur={() => setEditingHabit(null)}
+                              className="w-full bg-transparent text-sm text-foreground outline-none"
+                            />
+                          </form>
+                        ) : (
+                          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-foreground">
+                            {habit.name}
+                          </span>
+                        )}
                         <button
                           onClick={() => hideHabit(habit.id)}
                           className="absolute right-0 top-1 hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex"
@@ -346,6 +392,20 @@ export function HabitTrackerWidget({
                         >
                           <X className="h-3 w-3" />
                         </button>
+                        {!editingHabit && (
+                          <button
+                            onClick={() =>
+                              setEditingHabit({
+                                id: habit.id,
+                                name: habit.name || "",
+                              })
+                            }
+                            className="absolute right-5 top-1 hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:inline-flex"
+                            aria-label={`Edit habit: ${habit.name}`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </td>
 
