@@ -12,6 +12,23 @@ function allowStatic(path: string) {
   );
 }
 
+function hasValidKey(req: NextRequest) {
+  if (!EMBED_KEY) return false;
+  const keyFromQuery = req.nextUrl.searchParams.get("key");
+  if (keyFromQuery && keyFromQuery === EMBED_KEY) return true;
+  const ref = req.headers.get("referer");
+  if (ref) {
+    try {
+      const u = new URL(ref);
+      const k = u.searchParams.get("key");
+      if (k && k === EMBED_KEY) return true;
+    } catch {
+      // ignore invalid referer
+    }
+  }
+  return false;
+}
+
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const isDev = process.env.NODE_ENV !== "production";
@@ -22,7 +39,7 @@ export function middleware(req: NextRequest) {
   if (path.startsWith("/api/")) {
     if (isDev) return NextResponse.next();
     const hasSession = !!req.cookies.get(COOKIE_NAME)?.value;
-    if (!hasSession) {
+    if (!hasSession && !hasValidKey(req)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return NextResponse.next();
