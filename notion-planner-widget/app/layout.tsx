@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Noto_Sans_KR, Noto_Serif_KR } from "next/font/google";
 
 import "./globals.css";
@@ -16,10 +16,6 @@ const notoSerifKR = Noto_Serif_KR({
 export const metadata: Metadata = {
   title: "Planner Widget",
   description: "A beautiful planner dashboard widget for Notion",
-};
-
-export const viewport: Viewport = {
-  themeColor: "#c97a4e",
 };
 
 export default function RootLayout({
